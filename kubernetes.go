@@ -21,7 +21,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
-	"sigs.k8s.io/external-dns/endpoint"
+	externaldnsv1 "sigs.k8s.io/external-dns/apis/v1alpha1"
 	"sigs.k8s.io/external-dns/source"
 	gatewayapi_v1 "sigs.k8s.io/gateway-api/apis/v1"
 	gatewayapi_v1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
@@ -186,7 +186,7 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 					WatchFunc: dnsEndpointWatcher(ctx, core.NamespaceAll),
 					ListFunc:  dnsEndpointLister(ctx, core.NamespaceAll),
 				},
-				&endpoint.DNSEndpoint{},
+				&externaldnsv1.DNSEndpoint{},
 				defaultResyncPeriod,
 				cache.Indexers{externalDNSHostnameIndex: dnsEndpointTargetIndexFunc},
 			)
@@ -490,7 +490,7 @@ func splitHostnameAnnotation(annotation string) []string {
 }
 
 func dnsEndpointTargetIndexFunc(obj interface{}) ([]string, error) {
-	dnsEndpoint, ok := obj.(*endpoint.DNSEndpoint)
+	dnsEndpoint, ok := obj.(*externaldnsv1.DNSEndpoint)
 	if !ok {
 		return []string{}, nil
 	}
@@ -656,7 +656,7 @@ func lookupDNSEndpoint(ctrl cache.SharedIndexInformer) func([]string) (results [
 		}
 		log.Debugf("Found %d matching DNSEndpoint objects", len(objs))
 		for _, obj := range objs {
-			dnsEndpoint, _ := obj.(*endpoint.DNSEndpoint)
+			dnsEndpoint, _ := obj.(*externaldnsv1.DNSEndpoint)
 
 			for _, endpoint := range dnsEndpoint.Spec.Endpoints {
 				for _, target := range endpoint.Targets {

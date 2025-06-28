@@ -21,6 +21,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	fakeRest "k8s.io/client-go/rest/fake"
+	externaldnsv1 "sigs.k8s.io/external-dns/apis/v1alpha1"
 	"sigs.k8s.io/external-dns/endpoint"
 	gatewayapi_v1 "sigs.k8s.io/gateway-api/apis/v1"
 	gatewayapi_v1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
@@ -31,8 +32,8 @@ import (
 // taken from external-dns/source/crd_test.go
 func addKnownTypes(scheme *runtime.Scheme, groupVersion schema.GroupVersion) {
 	scheme.AddKnownTypes(groupVersion,
-		&endpoint.DNSEndpoint{},
-		&endpoint.DNSEndpointList{},
+		&externaldnsv1.DNSEndpoint{},
+		&externaldnsv1.DNSEndpointList{},
 	)
 	metav1.AddToGroupVersion(scheme, groupVersion)
 }
@@ -53,7 +54,7 @@ func fakeRESTClient(endpoints []*endpoint.Endpoint, apiVersion string, kind stri
 	addKnownTypes(scheme, groupVersion)
 
 	// Create your DNSEndpoint object.
-	dnsEndpoint := &endpoint.DNSEndpoint{
+	dnsEndpoint := &externaldnsv1.DNSEndpoint{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: apiVersion,
 			Kind:       kind,
@@ -65,11 +66,11 @@ func fakeRESTClient(endpoints []*endpoint.Endpoint, apiVersion string, kind stri
 			Labels:      labels,
 			Generation:  1,
 		},
-		Spec: endpoint.DNSEndpointSpec{
+		Spec: externaldnsv1.DNSEndpointSpec{
 			Endpoints: endpoints,
 		},
 	}
-	var dnsEndpointList endpoint.DNSEndpointList
+	var dnsEndpointList externaldnsv1.DNSEndpointList
 
 	codecFactory := serializer.WithoutConversionCodecFactory{
 		CodecFactory: serializer.NewCodecFactory(scheme),
@@ -86,7 +87,7 @@ func fakeRESTClient(endpoints []*endpoint.Endpoint, apiVersion string, kind stri
 			case p == "/apis/"+apiVersion+"/"+strings.ToLower(kind)+"s" && m == http.MethodGet,
 				p == "/apis/"+apiVersion+"/namespaces/"+namespace+"/"+strings.ToLower(kind)+"s" && m == http.MethodGet,
 				(strings.HasPrefix(p, "/apis/"+apiVersion+"/namespaces/") && strings.HasSuffix(p, strings.ToLower(kind)+"s") && m == http.MethodGet):
-				dnsEndpointList.Items = []endpoint.DNSEndpoint{*dnsEndpoint}
+				dnsEndpointList.Items = []externaldnsv1.DNSEndpoint{*dnsEndpoint}
 				return &http.Response{StatusCode: http.StatusOK, Header: defaultHeader(), Body: objBody(codec, &dnsEndpointList)}, nil
 
 			case p == "/apis/"+apiVersion+"/namespaces/"+namespace+"/"+strings.ToLower(kind)+"s" && m == http.MethodPost:
@@ -510,13 +511,13 @@ var testBadServices = map[string]*core.Service{
 	},
 }
 
-var testDNSEndpoints = map[string]*endpoint.DNSEndpoint{
-	"dual.example.com": &endpoint.DNSEndpoint{
+var testDNSEndpoints = map[string]*externaldnsv1.DNSEndpoint{
+	"dual.example.com": &externaldnsv1.DNSEndpoint{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ep1",
 			Namespace: "ns1",
 		},
-		Spec: endpoint.DNSEndpointSpec{
+		Spec: externaldnsv1.DNSEndpointSpec{
 			Endpoints: []*endpoint.Endpoint{
 				{
 					DNSName:    "dual.example.com",
