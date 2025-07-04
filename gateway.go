@@ -368,9 +368,7 @@ func (gw *Gateway) TXT(name string, results []string) (records []dns.RR) {
 	for _, result := range results {
 		if _, ok := dup[result]; !ok {
 			dup[result] = struct{}{}
-			var resultslice []string
-			resultslice = append(resultslice, result)
-			records = append(records, &dns.TXT{Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: gw.ttlLow}, Txt: resultslice})
+			records = append(records, &dns.TXT{Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: gw.ttlLow}, Txt: split255(result)})
 		}
 	}
 
@@ -420,4 +418,24 @@ func stripClosingDot(s string) string {
 		return strings.TrimSuffix(s, ".")
 	}
 	return s
+}
+
+// src: https://github.com/coredns/coredns/blob/0aee758833cabb1ec89756a698c52b83bbbdc587/plugin/etcd/msg/service.go#L145
+// Split255 splits a string into 255 byte chunks.
+func split255(s string) []string {
+	if len(s) < 255 {
+		return []string{s}
+	}
+	sx := []string{}
+	p, i := 0, 255
+	for {
+		if i > len(s) {
+			sx = append(sx, s[p:])
+			break
+		}
+		sx = append(sx, s[p:i])
+		p, i = p+255, i+255
+	}
+
+	return sx
 }
