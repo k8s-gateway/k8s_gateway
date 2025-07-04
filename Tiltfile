@@ -49,11 +49,15 @@ helm_remote('ingress-nginx',
 # Backend deployment for testing
 k8s_yaml('./test/backend.yml')
 
-k8s_yaml('https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/experimental-install.yaml')
+gateway_api_crd_yaml = local('./test/get-gateway-api-crds-for-tilt.sh')
+k8s_yaml(gateway_api_crd_yaml)
+
+dnsendpoint_crd_yaml = local('./test/get-dnsendpoint-crds-for-tilt.sh')
+k8s_yaml(dnsendpoint_crd_yaml)
 
 k8s_kind('HTTPRoute', api_version='gateway.networking.k8s.io/v1')
 k8s_kind('TLSRoute', api_version='gateway.networking.k8s.io/v1alpha2')
-k8s_kind('GRPCRoute', api_version='gateway.networking.k8s.io/v1alpha2')
+k8s_kind('GRPCRoute', api_version='gateway.networking.k8s.io/v1')
 k8s_kind('Gateway', api_version='gateway.networking.k8s.io/v1')
 k8s_yaml('./test/gateway-api/resources.yml')
 k8s_yaml('./test/gatewayclasses.yaml')

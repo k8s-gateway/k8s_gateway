@@ -48,6 +48,10 @@ func (gw *Gateway) serveSubApex(state request.Request) (int, error) {
 				if rr.Header().Rrtype == dns.TypeAAAA {
 					m.Answer = append(m.Answer, rr)
 				}
+			case dns.TypeTXT:
+				if rr.Header().Rrtype == dns.TypeTXT {
+					m.Answer = append(m.Answer, rr)
+				}
 			}
 		}
 

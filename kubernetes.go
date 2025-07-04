@@ -523,8 +523,12 @@ func checkDomainValid(domain string) bool {
 	return false
 }
 
-func lookupServiceIndex(ctrl cache.SharedIndexInformer) func([]string) []netip.Addr {
-	return func(indexKeys []string) (result []netip.Addr) {
+func lookupServiceIndex(ctrl cache.SharedIndexInformer) func([]string) map[string][]string {
+	return func(indexKeys []string) (result map[string][]string) {
+		if result == nil {
+			result = make(map[string][]string, 0)
+		}
+
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := ctrl.GetIndexer().ByIndex(serviceHostnameIndex, strings.ToLower(key))
@@ -536,20 +540,38 @@ func lookupServiceIndex(ctrl cache.SharedIndexInformer) func([]string) []netip.A
 
 			if len(service.Spec.ExternalIPs) > 0 {
 				for _, ip := range service.Spec.ExternalIPs {
-					result = append(result, netip.MustParseAddr(ip))
+					addr, err := netip.ParseAddr(ip)
+					if err != nil {
+						continue
+					}
+
+					if addr.Is4() {
+						if result["A"] == nil {
+							result["A"] = make([]string, 0)
+						}
+						result["A"] = append(result["A"], addr.String())
+					}
+					if addr.Is6() {
+						if result["AAAA"] == nil {
+							result["AAAA"] = make([]string, 0)
+						}
+						result["AAAA"] = append(result["AAAA"], addr.String())
+					}
 				}
 				// in case externalIPs are defined, ignoring status field completely
 				return
 			}
 
-			result = append(result, fetchServiceLoadBalancerIPs(service.Status.LoadBalancer.Ingress)...)
+			var fetchedResults map[string][]string
+			fetchedResults = fetchServiceLoadBalancerIPs(service.Status.LoadBalancer.Ingress)
+			result = appenddnsResults(result, fetchedResults)
 		}
 		return
 	}
 }
 
-func lookupHttpRouteIndex(http, gw cache.SharedIndexInformer, gwclasses []string) func([]string) []netip.Addr {
-	return func(indexKeys []string) (result []netip.Addr) {
+func lookupHttpRouteIndex(http, gw cache.SharedIndexInformer, gwclasses []string) func([]string) map[string][]string {
+	return func(indexKeys []string) (result map[string][]string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := http.GetIndexer().ByIndex(httpRouteHostnameIndex, strings.ToLower(key))
@@ -559,14 +581,17 @@ func lookupHttpRouteIndex(http, gw cache.SharedIndexInformer, gwclasses []string
 
 		for _, obj := range objs {
 			httpRoute, _ := obj.(*gatewayapi_v1.HTTPRoute)
-			result = append(result, lookupGateways(gw, httpRoute.Spec.ParentRefs, httpRoute.Namespace, gwclasses)...)
+
+			var fetchedResults map[string][]string
+			fetchedResults = lookupGateways(gw, httpRoute.Spec.ParentRefs, httpRoute.Namespace, gwclasses)
+			result = appenddnsResults(result, fetchedResults)
 		}
 		return
 	}
 }
 
-func lookupTLSRouteIndex(tls, gw cache.SharedIndexInformer, gwclasses []string) func([]string) []netip.Addr {
-	return func(indexKeys []string) (result []netip.Addr) {
+func lookupTLSRouteIndex(tls, gw cache.SharedIndexInformer, gwclasses []string) func([]string) map[string][]string {
+	return func(indexKeys []string) (result map[string][]string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := tls.GetIndexer().ByIndex(tlsRouteHostnameIndex, strings.ToLower(key))
@@ -576,14 +601,17 @@ func lookupTLSRouteIndex(tls, gw cache.SharedIndexInformer, gwclasses []string) 
 
 		for _, obj := range objs {
 			tlsRoute, _ := obj.(*gatewayapi_v1alpha2.TLSRoute)
-			result = append(result, lookupGateways(gw, tlsRoute.Spec.ParentRefs, tlsRoute.Namespace, gwclasses)...)
+
+			var fetchedResults map[string][]string
+			fetchedResults = lookupGateways(gw, tlsRoute.Spec.ParentRefs, tlsRoute.Namespace, gwclasses)
+			result = appenddnsResults(result, fetchedResults)
 		}
 		return
 	}
 }
 
-func lookupGRPCRouteIndex(grpc, gw cache.SharedIndexInformer, gwclasses []string) func([]string) []netip.Addr {
-	return func(indexKeys []string) (result []netip.Addr) {
+func lookupGRPCRouteIndex(grpc, gw cache.SharedIndexInformer, gwclasses []string) func([]string) map[string][]string {
+	return func(indexKeys []string) (result map[string][]string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := grpc.GetIndexer().ByIndex(grpcRouteHostnameIndex, strings.ToLower(key))
@@ -593,13 +621,16 @@ func lookupGRPCRouteIndex(grpc, gw cache.SharedIndexInformer, gwclasses []string
 
 		for _, obj := range objs {
 			grpcRoute, _ := obj.(*gatewayapi_v1.GRPCRoute)
-			result = append(result, lookupGateways(gw, grpcRoute.Spec.ParentRefs, grpcRoute.Namespace, gwclasses)...)
+
+			var fetchedResults map[string][]string
+			fetchedResults = lookupGateways(gw, grpcRoute.Spec.ParentRefs, grpcRoute.Namespace, gwclasses)
+			result = appenddnsResults(result, fetchedResults)
 		}
 		return
 	}
 }
 
-func lookupGateways(gw cache.SharedIndexInformer, refs []gatewayapi_v1.ParentReference, ns string, gwclasses []string) (result []netip.Addr) {
+func lookupGateways(gw cache.SharedIndexInformer, refs []gatewayapi_v1.ParentReference, ns string, gwclasses []string) (result map[string][]string) {
 	for _, gwRef := range refs {
 
 		if gwRef.Namespace != nil {
@@ -618,14 +649,16 @@ func lookupGateways(gw cache.SharedIndexInformer, refs []gatewayapi_v1.ParentRef
 				continue
 			}
 
-			result = append(result, fetchGatewayIPs(gw)...)
+			var fetchedResults map[string][]string
+			fetchedResults = fetchGatewayIPs(gw)
+			result = appenddnsResults(result, fetchedResults)
 		}
 	}
 	return
 }
 
-func lookupIngressIndex(ctrl cache.SharedIndexInformer, ingclasses []string) func([]string) []netip.Addr {
-	return func(indexKeys []string) (result []netip.Addr) {
+func lookupIngressIndex(ctrl cache.SharedIndexInformer, ingclasses []string) func([]string) map[string][]string {
+	return func(indexKeys []string) (result map[string][]string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := ctrl.GetIndexer().ByIndex(ingressHostnameIndex, strings.ToLower(key))
@@ -640,15 +673,21 @@ func lookupIngressIndex(ctrl cache.SharedIndexInformer, ingclasses []string) fun
 				continue
 			}
 
-			result = append(result, fetchIngressLoadBalancerIPs(ingress.Status.LoadBalancer.Ingress)...)
+			var fetchedResults map[string][]string
+			fetchedResults = fetchIngressLoadBalancerIPs(ingress.Status.LoadBalancer.Ingress)
+			result = appenddnsResults(result, fetchedResults)
 		}
 
 		return
 	}
 }
 
-func lookupDNSEndpoint(ctrl cache.SharedIndexInformer) func([]string) (results []netip.Addr) {
-	return func(indexKeys []string) (result []netip.Addr) {
+func lookupDNSEndpoint(ctrl cache.SharedIndexInformer) func([]string) (results map[string][]string) {
+	return func(indexKeys []string) (result map[string][]string) {
+		if result == nil {
+			result = make(map[string][]string, 0)
+		}
+
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := ctrl.GetIndexer().ByIndex(externalDNSHostnameIndex, strings.ToLower(key))
@@ -660,12 +699,31 @@ func lookupDNSEndpoint(ctrl cache.SharedIndexInformer) func([]string) (results [
 
 			for _, endpoint := range dnsEndpoint.Spec.Endpoints {
 				for _, target := range endpoint.Targets {
-					if endpoint.RecordType == "A" || endpoint.RecordType == "AAAA" {
+					if endpoint.RecordType == "A" {
 						addr, err := netip.ParseAddr(target)
 						if err != nil {
 							continue
 						}
-						result = append(result, addr)
+						if result["A"] == nil {
+							result["A"] = make([]string, 0)
+						}
+						result["A"] = append(result["A"], addr.String())
+					}
+					if endpoint.RecordType == "AAAA" {
+						addr, err := netip.ParseAddr(target)
+						if err != nil {
+							continue
+						}
+						if result["AAAA"] == nil {
+							result["AAAA"] = make([]string, 0)
+						}
+						result["AAAA"] = append(result["AAAA"], addr.String())
+					}
+					if endpoint.RecordType == "TXT" {
+						if result["TXT"] == nil {
+							result["TXT"] = make([]string, 0)
+						}
+						result["TXT"] = append(result["TXT"], target)
 					}
 				}
 			}
@@ -674,14 +732,29 @@ func lookupDNSEndpoint(ctrl cache.SharedIndexInformer) func([]string) (results [
 	}
 }
 
-func fetchGatewayIPs(gw *gatewayapi_v1.Gateway) (results []netip.Addr) {
+func fetchGatewayIPs(gw *gatewayapi_v1.Gateway) (results map[string][]string) {
+	if results == nil {
+		results = make(map[string][]string, 0)
+	}
+
 	for _, addr := range gw.Status.Addresses {
 		if *addr.Type == gatewayapi_v1.IPAddressType {
 			addr, err := netip.ParseAddr(addr.Value)
 			if err != nil {
 				continue
 			}
-			results = append(results, addr)
+			if addr.Is4() {
+				if results["A"] == nil {
+					results["A"] = make([]string, 0)
+				}
+				results["A"] = append(results["A"], addr.String())
+			}
+			if addr.Is6() {
+				if results["AAAA"] == nil {
+					results["AAAA"] = make([]string, 0)
+				}
+				results["AAAA"] = append(results["AAAA"], addr.String())
+			}
 			continue
 		}
 
@@ -695,14 +768,29 @@ func fetchGatewayIPs(gw *gatewayapi_v1.Gateway) (results []netip.Addr) {
 				if err != nil {
 					continue
 				}
-				results = append(results, addr)
+				if addr.Is4() {
+					if results["A"] == nil {
+						results["A"] = make([]string, 0)
+					}
+					results["A"] = append(results["A"], addr.String())
+				}
+				if addr.Is6() {
+					if results["AAAA"] == nil {
+						results["AAAA"] = make([]string, 0)
+					}
+					results["AAAA"] = append(results["AAAA"], addr.String())
+				}
 			}
 		}
 	}
 	return
 }
 
-func fetchServiceLoadBalancerIPs(ingresses []core.LoadBalancerIngress) (results []netip.Addr) {
+func fetchServiceLoadBalancerIPs(ingresses []core.LoadBalancerIngress) (results map[string][]string) {
+	if results == nil {
+		results = make(map[string][]string, 0)
+	}
+
 	for _, address := range ingresses {
 		if address.Hostname != "" {
 			log.Debugf("Looking up hostname %s", address.Hostname)
@@ -715,20 +803,46 @@ func fetchServiceLoadBalancerIPs(ingresses []core.LoadBalancerIngress) (results 
 				if err != nil {
 					continue
 				}
-				results = append(results, addr)
+				if addr.Is4() {
+					if results["A"] == nil {
+						results["A"] = make([]string, 0)
+					}
+					results["A"] = append(results["A"], addr.String())
+				}
+				if addr.Is6() {
+					if results["AAAA"] == nil {
+						results["AAAA"] = make([]string, 0)
+					}
+					results["AAAA"] = append(results["AAAA"], addr.String())
+				}
 			}
 		} else if address.IP != "" {
 			addr, err := netip.ParseAddr(address.IP)
 			if err != nil {
 				continue
 			}
-			results = append(results, addr)
+			if addr.Is4() {
+				if results["A"] == nil {
+					results["A"] = make([]string, 0)
+				}
+				results["A"] = append(results["A"], addr.String())
+			}
+			if addr.Is6() {
+				if results["AAAA"] == nil {
+					results["AAAA"] = make([]string, 0)
+				}
+				results["AAAA"] = append(results["AAAA"], addr.String())
+			}
 		}
 	}
 	return
 }
 
-func fetchIngressLoadBalancerIPs(ingresses []networking.IngressLoadBalancerIngress) (results []netip.Addr) {
+func fetchIngressLoadBalancerIPs(ingresses []networking.IngressLoadBalancerIngress) (results map[string][]string) {
+	if results == nil {
+		results = make(map[string][]string, 0)
+	}
+
 	for _, address := range ingresses {
 		if address.Hostname != "" {
 			log.Debugf("Looking up hostname %s", address.Hostname)
@@ -741,14 +855,36 @@ func fetchIngressLoadBalancerIPs(ingresses []networking.IngressLoadBalancerIngre
 				if err != nil {
 					continue
 				}
-				results = append(results, addr)
+				if addr.Is4() {
+					if results["A"] == nil {
+						results["A"] = make([]string, 0)
+					}
+					results["A"] = append(results["A"], addr.String())
+				}
+				if addr.Is6() {
+					if results["AAAA"] == nil {
+						results["AAAA"] = make([]string, 0)
+					}
+					results["AAAA"] = append(results["AAAA"], addr.String())
+				}
 			}
 		} else if address.IP != "" {
 			addr, err := netip.ParseAddr(address.IP)
 			if err != nil {
 				continue
 			}
-			results = append(results, addr)
+			if addr.Is4() {
+				if results["A"] == nil {
+					results["A"] = make([]string, 0)
+				}
+				results["A"] = append(results["A"], addr.String())
+			}
+			if addr.Is6() {
+				if results["AAAA"] == nil {
+					results["AAAA"] = make([]string, 0)
+				}
+				results["AAAA"] = append(results["AAAA"], addr.String())
+			}
 		}
 	}
 	return
@@ -764,4 +900,27 @@ var dns1123SubdomainRegexp = regexp.MustCompile("^" + dns1123SubdomainFmt + "$")
 
 func isdns1123Hostname(value string) bool {
 	return dns1123SubdomainRegexp.MatchString(value)
+}
+
+func appenddnsResults(result map[string][]string, fetchedResults map[string][]string) map[string][]string {
+	if result == nil {
+		result = make(map[string][]string, 0)
+	}
+
+	if result["A"] == nil {
+		result["A"] = make([]string, 0)
+	}
+	result["A"] = append(result["A"], fetchedResults["A"]...)
+
+	if result["AAAA"] == nil {
+		result["AAAA"] = make([]string, 0)
+	}
+	result["AAAA"] = append(result["AAAA"], fetchedResults["AAAA"]...)
+
+	if result["TXT"] == nil {
+		result["TXT"] = make([]string, 0)
+	}
+	result["TXT"] = append(result["TXT"], fetchedResults["TXT"]...)
+
+	return result
 }

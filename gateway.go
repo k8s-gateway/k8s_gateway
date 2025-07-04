@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"net/netip"
 	"strings"
 
 	"github.com/coredns/coredns/plugin"
@@ -13,7 +12,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-type lookupFunc func(indexKeys []string) []netip.Addr
+type lookupFunc func(indexKeys []string) map[string][]string
 
 type resourceWithIndex struct {
 	name   string
@@ -30,7 +29,7 @@ var staticResources = []*resourceWithIndex{
 	{name: "DNSEndpoint", lookup: noop},
 }
 
-var noop lookupFunc = func([]string) (result []netip.Addr) { return }
+var noop lookupFunc = func([]string) (result map[string][]string) { return }
 
 var (
 	ttlDefault        = uint32(60)
@@ -159,29 +158,17 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	log.Debugf("computed response addresses %v", addrs)
 
 	// Fall through if no host matches
-	if len(addrs) == 0 && gw.Fall.Through(qname) {
+	if len(addrs["A"]) == 0 && len(addrs["AAAA"]) == 0 && len(addrs["TXT"]) == 0 && gw.Fall.Through(qname) {
 		return plugin.NextOrFailure(gw.Name(), gw.Next, ctx, w, r)
 	}
 
 	m := new(dns.Msg)
 	m.SetReply(state.Req)
 
-	var ipv4Addrs []netip.Addr
-	var ipv6Addrs []netip.Addr
-
-	for _, addr := range addrs {
-		if addr.Is4() {
-			ipv4Addrs = append(ipv4Addrs, addr)
-		}
-		if addr.Is6() {
-			ipv6Addrs = append(ipv6Addrs, addr)
-		}
-	}
-
 	switch state.QType() {
 	case dns.TypeA:
 
-		if len(ipv4Addrs) == 0 {
+		if len(addrs["A"]) == 0 {
 
 			if !isRootZoneQuery {
 				// No match, return NXDOMAIN
@@ -192,11 +179,12 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 
 		} else {
 
-			m.Answer = gw.A(state.Name(), ipv4Addrs)
+			m.Answer = gw.A(state.Name(), addrs["A"])
 		}
+
 	case dns.TypeAAAA:
 
-		if len(ipv6Addrs) == 0 {
+		if len(addrs["AAAA"]) == 0 {
 
 			if !isRootZoneQuery {
 				// No match, return NXDOMAIN
@@ -204,7 +192,7 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 			}
 
 			// as per rfc4074 #3
-			if len(ipv4Addrs) > 0 {
+			if len(addrs["A"]) > 0 {
 				m.Rcode = dns.RcodeSuccess
 			}
 
@@ -212,7 +200,23 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 
 		} else {
 
-			m.Answer = gw.AAAA(state.Name(), ipv6Addrs)
+			m.Answer = gw.AAAA(state.Name(), addrs["AAAA"])
+		}
+
+	case dns.TypeTXT:
+
+		if len(addrs["TXT"]) == 0 {
+
+			if !isRootZoneQuery {
+				// No match, return NXDOMAIN
+				m.Rcode = dns.RcodeNameError
+			}
+
+			m.Ns = []dns.RR{gw.soa(state)}
+
+		} else {
+
+			m.Answer = gw.A(state.Name(), addrs["TXT"])
 		}
 
 	case dns.TypeSOA:
@@ -298,13 +302,33 @@ func (gw *Gateway) toWildcardQName(qName, zone string) string {
 
 // Gets the set of addresses associated with the first set of index keys
 // that is in the indexer.
-func (gw *Gateway) getMatchingAddresses(indexKeySets [][]string) []netip.Addr {
+func (gw *Gateway) getMatchingAddresses(indexKeySets [][]string) map[string][]string {
 	// Iterate over supported resources and lookup DNS queries
 	// Stop once we've found at least one match
 	for _, indexKeys := range indexKeySets {
 		for _, resource := range gw.Resources {
 			addrs := resource.lookup(indexKeys)
-			if len(addrs) > 0 {
+
+			if addrs == nil {
+				addrs = make(map[string][]string, 0)
+			}
+			if addrs["A"] == nil {
+				addrs["A"] = make([]string, 0)
+			}
+			if addrs["AAAA"] == nil {
+				addrs["AAAA"] = make([]string, 0)
+			}
+			if addrs["TXT"] == nil {
+				addrs["TXT"] = make([]string, 0)
+			}
+
+			if len(addrs["A"]) > 0 {
+				return addrs
+			}
+			if len(addrs["AAAA"]) > 0 {
+				return addrs
+			}
+			if len(addrs["TXT"]) > 0 {
 				return addrs
 			}
 		}
@@ -317,40 +341,60 @@ func (gw *Gateway) getMatchingAddresses(indexKeySets [][]string) []netip.Addr {
 func (gw *Gateway) Name() string { return thisPlugin }
 
 // A does the A-record lookup in ingress indexer
-func (gw *Gateway) A(name string, results []netip.Addr) (records []dns.RR) {
+func (gw *Gateway) A(name string, results []string) (records []dns.RR) {
 	dup := make(map[string]struct{})
 	for _, result := range results {
-		if _, ok := dup[result.String()]; !ok {
-			dup[result.String()] = struct{}{}
-			records = append(records, &dns.A{Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: gw.ttlLow}, A: net.ParseIP(result.String())})
+		if _, ok := dup[result]; !ok {
+			dup[result] = struct{}{}
+			records = append(records, &dns.A{Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: gw.ttlLow}, A: net.ParseIP(result)})
 		}
 	}
 	return records
 }
 
-func (gw *Gateway) AAAA(name string, results []netip.Addr) (records []dns.RR) {
+func (gw *Gateway) AAAA(name string, results []string) (records []dns.RR) {
 	dup := make(map[string]struct{})
 	for _, result := range results {
-		if _, ok := dup[result.String()]; !ok {
-			dup[result.String()] = struct{}{}
-			records = append(records, &dns.AAAA{Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: gw.ttlLow}, AAAA: net.ParseIP(result.String())})
+		if _, ok := dup[result]; !ok {
+			dup[result] = struct{}{}
+			records = append(records, &dns.AAAA{Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: gw.ttlLow}, AAAA: net.ParseIP(result)})
 		}
 	}
+	return records
+}
+
+func (gw *Gateway) TXT(name string, results []string) (records []dns.RR) {
+	dup := make(map[string]struct{})
+	for _, result := range results {
+		if _, ok := dup[result]; !ok {
+			dup[result] = struct{}{}
+			var resultslice []string
+			resultslice = append(resultslice, result)
+			records = append(records, &dns.TXT{Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: gw.ttlLow}, Txt: resultslice})
+		}
+	}
+
 	return records
 }
 
 // SelfAddress returns the address of the local k8s_gateway service
 func (gw *Gateway) SelfAddress(state request.Request) (records []dns.RR) {
 
-	var addrs1, addrs2 []netip.Addr
+	var addrs1, addrs2 []string
 	for _, resource := range gw.Resources {
 		results := resource.lookup([]string{gw.apex})
-		if len(results) > 0 {
-			addrs1 = append(addrs1, results...)
+		if len(results["A"]) > 0 {
+			addrs1 = append(addrs1, results["A"]...)
+		}
+		if len(results["AAAA"]) > 0 {
+			addrs1 = append(addrs1, results["AAAA"]...)
 		}
 		results = resource.lookup([]string{gw.secondNS})
-		if len(results) > 0 {
-			addrs2 = append(addrs2, results...)
+		if len(results["A"]) > 0 {
+			addrs2 = append(addrs2, results["A"]...)
+		}
+		if len(results["AAAA"]) > 0 {
+			addrs2 = append(addrs2, results["AAAA"]...)
 		}
 	}
 

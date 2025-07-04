@@ -529,6 +529,11 @@ var testDNSEndpoints = map[string]*externaldnsv1.DNSEndpoint{
 					RecordType: "AAAA",
 					Targets:    []string{"2001:db8::1"},
 				},
+				{
+					DNSName:    "dual.example.com",
+					RecordType: "TXT",
+					Targets:    []string{"challenge"},
+				},
 			},
 		},
 	},

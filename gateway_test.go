@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"errors"
-	"net/netip"
 	"strings"
 	"testing"
 
@@ -116,6 +115,7 @@ var tests = []test.Case{
 		Qname: "svc1.ns1.example.com.", Qtype: dns.TypeA, Rcode: dns.RcodeSuccess,
 		Answer: []dns.RR{
 			test.A("svc1.ns1.example.com.   60  IN  A   192.0.1.1"),
+			test.A("svc1.ns1.example.com.   60  IN  A   192.0.1.2"),
 		},
 	},
 	// Existing Ingress | Test 1
@@ -186,6 +186,7 @@ var tests = []test.Case{
 		Qname: "svC1.Ns1.exAmplE.Com.", Qtype: dns.TypeA, Rcode: dns.RcodeSuccess,
 		Answer: []dns.RR{
 			test.A("svc1.ns1.example.com.   60  IN  A   192.0.1.1"),
+			test.A("svc1.ns1.example.com.   60  IN  A   192.0.1.2"),
 		},
 	},
 	// basic gateway API lookup | Test 13
@@ -240,6 +241,27 @@ var tests = []test.Case{
 			test.A("specific-subdomain.wildcard.example.com. 60  IN  A   192.0.0.7"),
 		},
 	},
+	// Existing Endpoint | Test 1
+	{
+		Qname: "domain.endpoint.example.com.", Qtype: dns.TypeA, Rcode: dns.RcodeSuccess,
+		Answer: []dns.RR{
+			test.A("domain.endpoint.example.com. 60  IN  A   192.0.4.1"),
+		},
+	},
+	// Existing Endpoint | Test 2
+	{
+		Qname: "endpoint.example.com.", Qtype: dns.TypeA, Rcode: dns.RcodeSuccess,
+		Answer: []dns.RR{
+			test.A("endpoint.example.com. 60  IN  A   192.0.4.4"),
+		},
+	},
+	// Existing Endpoint | TXT record
+	{
+		Qname: "endpoint.example.com.", Qtype: dns.TypeTXT, Rcode: dns.RcodeSuccess,
+		Answer: []dns.RR{
+			test.TXT("endpoint.example.com. 60  IN  A   challenge"),
+		},
+	},
 }
 
 var testsFallthrough = []FallthroughCase{
@@ -270,57 +292,132 @@ var testsFallthrough = []FallthroughCase{
 	},
 }
 
-var testServiceIndexes = map[string][]netip.Addr{
-	"svc1.ns1":         {netip.MustParseAddr("192.0.1.1"), netip.MustParseAddr("fd12:3456:789a:1::")},
-	"svc2.ns1":         {netip.MustParseAddr("192.0.1.2")},
+var testServiceIndexes = map[string]map[string][]string{
+	"svc1.ns1":         {
+		"A": {
+			"192.0.1.1",
+			"192.0.1.2",
+		},
+		"AAAA": {
+			"fd12:3456:789a:1::",
+		},
+	},
+	"svc2.ns1":         {
+		"A": {
+			"192.0.1.3",
+		},
+	},
 	"svc3.ns1":         {},
-	"dns1.kube-system": {netip.MustParseAddr("192.0.1.53")},
+	"dns1.kube-system": {
+		"A": {
+			"192.0.1.53",
+		},
+	},
 }
 
-func testServiceLookup(keys []string) (results []netip.Addr) {
+func testServiceLookup(keys []string) (results map[string][]string) {
 	for _, key := range keys {
-		results = append(results, testServiceIndexes[strings.ToLower(key)]...)
+
+		var fetchedResults map[string][]string
+		fetchedResults = testServiceIndexes[strings.ToLower(key)]
+		results = appenddnsResults(results, fetchedResults)
 	}
 	return results
 }
 
-var testIngressIndexes = map[string][]netip.Addr{
-	"domain.example.com":                      {netip.MustParseAddr("192.0.0.1")},
-	"svc2.ns1.example.com":                    {netip.MustParseAddr("192.0.0.2")},
-	"example.com":                             {netip.MustParseAddr("192.0.0.3")},
-	"shadow.example.com":                      {netip.MustParseAddr("192.0.0.4")},
-	"shadow-vs.example.com":                   {netip.MustParseAddr("192.0.0.5")},
-	"*.wildcard.example.com":                  {netip.MustParseAddr("192.0.0.6")},
-	"specific-subdomain.wildcard.example.com": {netip.MustParseAddr("192.0.0.7")},
+var testIngressIndexes = map[string]map[string][]string{
+	"domain.example.com":                      {
+		"A": {
+			"192.0.0.1",
+		},
+	},
+	"svc2.ns1.example.com":                    {
+		"A": {
+			"192.0.0.2",
+		},
+	},
+	"example.com":                             {
+		"A": {
+			"192.0.0.3",
+		},
+	},
+	"shadow.example.com":                      {
+		"A": {
+			"192.0.0.4",
+		},
+	},
+	"shadow-vs.example.com":                   {
+		"A": {
+			"192.0.0.5",
+		},
+	},
+	"*.wildcard.example.com":                  {
+		"A": {
+			"192.0.0.6",
+		},
+	},
+	"specific-subdomain.wildcard.example.com": {
+		"A": {
+			"192.0.0.7",
+		},
+	},
 }
 
-func testIngressLookup(keys []string) (results []netip.Addr) {
+func testIngressLookup(keys []string) (results map[string][]string) {
 	for _, key := range keys {
-		results = append(results, testIngressIndexes[strings.ToLower(key)]...)
+
+		var fetchedResults map[string][]string
+		fetchedResults = testIngressIndexes[strings.ToLower(key)]
+		results = appenddnsResults(results, fetchedResults)
 	}
 	return results
 }
 
-var testRouteIndexes = map[string][]netip.Addr{
-	"domain.gw.example.com": {netip.MustParseAddr("192.0.2.1")},
-	"shadow.example.com":    {netip.MustParseAddr("192.0.2.4")},
+var testRouteIndexes = map[string]map[string][]string{
+	"domain.gw.example.com": {
+		"A": {
+			"192.0.2.1",
+		},
+	},
+	"shadow.example.com":    {
+		"A": {
+			"192.0.2.4",
+		},
+	},
 }
 
-func testRouteLookup(keys []string) (results []netip.Addr) {
+func testRouteLookup(keys []string) (results map[string][]string) {
 	for _, key := range keys {
-		results = append(results, testRouteIndexes[strings.ToLower(key)]...)
+
+		var fetchedResults map[string][]string
+		fetchedResults = testRouteIndexes[strings.ToLower(key)]
+		results = appenddnsResults(results, fetchedResults)
 	}
 	return results
 }
 
-var testDNSEndpointIndexes = map[string][]netip.Addr{
-	"domain.endpoint.example.com": {netip.MustParseAddr("192.0.4.1")},
-	"endpoint.example.com":        {netip.MustParseAddr("192.0.4.4")},
+var testDNSEndpointIndexes = map[string]map[string][]string{
+	"domain.endpoint.example.com": {
+		"A": {
+			"192.0.4.1",
+		},
+	},
+	"endpoint.example.com":        {
+		"A": {
+			"192.0.4.4",
+		},
+		"TXT": {
+			"challenge",
+		},
+	},
 }
 
-func testDNSEndpointLookup(keys []string) (results []netip.Addr) {
+func testDNSEndpointLookup(keys []string) (results map[string][]string) {
 	for _, key := range keys {
-		results = append(results, testDNSEndpointIndexes[strings.ToLower(key)]...)
+
+		var fetchedResults map[string][]string
+		fetchedResults = testDNSEndpointIndexes[strings.ToLower(key)]
+		results = appenddnsResults(results, fetchedResults)
 	}
 	return results
 }
