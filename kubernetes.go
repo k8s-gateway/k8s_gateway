@@ -523,8 +523,8 @@ func checkDomainValid(domain string) bool {
 	return false
 }
 
-func lookupServiceIndex(ctrl cache.SharedIndexInformer) func([]string) []netip.Addr {
-	return func(indexKeys []string) (result []netip.Addr) {
+func lookupServiceIndex(ctrl cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string) {
+	return func(indexKeys []string) (result []netip.Addr, raw []string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := ctrl.GetIndexer().ByIndex(serviceHostnameIndex, strings.ToLower(key))
@@ -548,8 +548,8 @@ func lookupServiceIndex(ctrl cache.SharedIndexInformer) func([]string) []netip.A
 	}
 }
 
-func lookupHttpRouteIndex(http, gw cache.SharedIndexInformer, gwclasses []string) func([]string) []netip.Addr {
-	return func(indexKeys []string) (result []netip.Addr) {
+func lookupHttpRouteIndex(http, gw cache.SharedIndexInformer, gwclasses []string) func([]string) (results []netip.Addr, raws []string) {
+	return func(indexKeys []string) (result []netip.Addr, raw []string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := http.GetIndexer().ByIndex(httpRouteHostnameIndex, strings.ToLower(key))
@@ -565,8 +565,8 @@ func lookupHttpRouteIndex(http, gw cache.SharedIndexInformer, gwclasses []string
 	}
 }
 
-func lookupTLSRouteIndex(tls, gw cache.SharedIndexInformer, gwclasses []string) func([]string) []netip.Addr {
-	return func(indexKeys []string) (result []netip.Addr) {
+func lookupTLSRouteIndex(tls, gw cache.SharedIndexInformer, gwclasses []string) func([]string) (results []netip.Addr, raws []string) {
+	return func(indexKeys []string) (result []netip.Addr, raw []string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := tls.GetIndexer().ByIndex(tlsRouteHostnameIndex, strings.ToLower(key))
@@ -582,8 +582,8 @@ func lookupTLSRouteIndex(tls, gw cache.SharedIndexInformer, gwclasses []string) 
 	}
 }
 
-func lookupGRPCRouteIndex(grpc, gw cache.SharedIndexInformer, gwclasses []string) func([]string) []netip.Addr {
-	return func(indexKeys []string) (result []netip.Addr) {
+func lookupGRPCRouteIndex(grpc, gw cache.SharedIndexInformer, gwclasses []string) func([]string) (results []netip.Addr, raws []string) {
+	return func(indexKeys []string) (result []netip.Addr, raw []string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := grpc.GetIndexer().ByIndex(grpcRouteHostnameIndex, strings.ToLower(key))
@@ -624,8 +624,8 @@ func lookupGateways(gw cache.SharedIndexInformer, refs []gatewayapi_v1.ParentRef
 	return
 }
 
-func lookupIngressIndex(ctrl cache.SharedIndexInformer, ingclasses []string) func([]string) []netip.Addr {
-	return func(indexKeys []string) (result []netip.Addr) {
+func lookupIngressIndex(ctrl cache.SharedIndexInformer, ingclasses []string) func([]string) (results []netip.Addr, raws []string) {
+	return func(indexKeys []string) (result []netip.Addr, raw []string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := ctrl.GetIndexer().ByIndex(ingressHostnameIndex, strings.ToLower(key))
@@ -647,8 +647,8 @@ func lookupIngressIndex(ctrl cache.SharedIndexInformer, ingclasses []string) fun
 	}
 }
 
-func lookupDNSEndpoint(ctrl cache.SharedIndexInformer) func([]string) (results []netip.Addr) {
-	return func(indexKeys []string) (result []netip.Addr) {
+func lookupDNSEndpoint(ctrl cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string) {
+	return func(indexKeys []string) (result []netip.Addr, raw []string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := ctrl.GetIndexer().ByIndex(externalDNSHostnameIndex, strings.ToLower(key))
@@ -667,10 +667,13 @@ func lookupDNSEndpoint(ctrl cache.SharedIndexInformer) func([]string) (results [
 						}
 						result = append(result, addr)
 					}
+					if endpoint.RecordType == "TXT" {
+						raw = append(raw, target)
+					}
 				}
 			}
 		}
-		return result
+		return result, raw
 	}
 }
 
