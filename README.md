@@ -87,6 +87,35 @@ k8s_gateway example.com {
 }
 ```
 
+## Excluding Specific Resources
+
+In some cases, you may want to exclude specific Kubernetes resources from being processed by the `k8s_gateway` plugin. This can be useful when you have resources that should not be exposed via DNS or when you want to temporarily disable DNS resolution for certain objects.
+
+### Using the Ignore Label
+
+You can exclude any supported resource type by adding the `k8s-gateway.dns/ignore` label with the value `"true"` to the resource's metadata:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-ingress
+  labels:
+    k8s-gateway.dns/ignore: "true"  # This ingress will be excluded from DNS resolution
+spec:
+  # ... rest of spec
+```
+
+This label works for all supported resource types:
+- **Ingress** resources
+- **Service** resources (of type LoadBalancer)
+- **HTTPRoute** resources
+- **TLSRoute** resources  
+- **GRPCRoute** resources
+- **DNSEndpoint** resources
+
+When a resource is excluded using this label, the plugin will not return it's address.
+
 ## Dual Nameserver Deployment
 
 Most of the time, deploying a single `k8s_gateway` instance is enough to satisfy most popular DNS resolvers. However, some of the stricter resolvers expect a zone to be available on at least two servers (RFC1034, section 4.1). In order to satisfy this requirement, a pair of `k8s_gateway` instances need to be deployed, each with its own unique loadBalancer IP. This way the zone NS record will point to a pair of glue records, hard-coded to these IPs.

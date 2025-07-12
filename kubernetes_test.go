@@ -132,6 +132,12 @@ func TestController(t *testing.T) {
 
 	for index, testObj := range testIngresses {
 		found, _ := ingressHostnameIndexFunc(testObj)
+		if checkIgnoreLabel(testObj.Labels) {
+			if len(found) != 0 {
+				t.Errorf("Ignored Ingress key %s should not be found in index, but found: %v", index, found)
+			}
+			continue
+		}
 		if !isFound(index, found) {
 			t.Errorf("Ingress key %s not found in index: %v", index, found)
 		}
@@ -143,6 +149,12 @@ func TestController(t *testing.T) {
 
 	for index, testObj := range testServices {
 		found, _ := serviceHostnameIndexFunc(testObj)
+		if checkIgnoreLabel(testObj.Labels) {
+			if len(found) != 0 {
+				t.Errorf("Ignored Service key %s should not be found in index, but found: %v", index, found)
+			}
+			continue
+		}
 		indices := strings.Split(index, ",")
 		for _, idx := range indices {
 			if !isFound(strings.TrimSpace(idx), found) {
@@ -164,6 +176,12 @@ func TestController(t *testing.T) {
 
 	for index, testObj := range testHTTPRoutes {
 		found, _ := httpRouteHostnameIndexFunc(testObj)
+		if checkIgnoreLabel(testObj.Labels) {
+			if len(found) != 0 {
+				t.Errorf("Ignored HTTPRoute key %s should not be found in index, but found: %v", index, found)
+			}
+			continue
+		}
 		if !isFound(index, found) {
 			t.Errorf("HTTPRoute key %s not found in index: %v", index, found)
 		}
@@ -171,6 +189,12 @@ func TestController(t *testing.T) {
 
 	for index, testObj := range testTLSRoutes {
 		found, _ := tlsRouteHostnameIndexFunc(testObj)
+		if checkIgnoreLabel(testObj.Labels) {
+			if len(found) != 0 {
+				t.Errorf("Ignored TLSRoute key %s should not be found in index, but found: %v", index, found)
+			}
+			continue
+		}
 		if !isFound(index, found) {
 			t.Errorf("TLSRoute key %s not found in index: %v", index, found)
 		}
@@ -178,8 +202,14 @@ func TestController(t *testing.T) {
 
 	for index, testObj := range testGRPCRoutes {
 		found, _ := grpcRouteHostnameIndexFunc(testObj)
+		if checkIgnoreLabel(testObj.Labels) {
+			if len(found) != 0 {
+				t.Errorf("Ignored GRPCRoute key %s should not be found in index, but found: %v", index, found)
+			}
+			continue
+		}
 		if !isFound(index, found) {
-			t.Errorf("GRPC key %s not found in index: %v", index, found)
+			t.Errorf("GRPCRoute key %s not found in index: %v", index, found)
 		}
 	}
 
@@ -192,6 +222,12 @@ func TestController(t *testing.T) {
 
 	for index, testObj := range testDNSEndpoints {
 		found, _ := dnsEndpointTargetIndexFunc(testObj)
+		if checkIgnoreLabel(testObj.Labels) {
+			if len(found) != 0 {
+				t.Errorf("Ignored DNSEndpoint key %s should not be found in index, but found: %v", index, found)
+			}
+			continue
+		}
 		if !isFound(index, found) {
 			t.Errorf("DNSEndpoint key %s not found in index: %v", index, found)
 		}
@@ -321,6 +357,29 @@ var testIngresses = map[string]*networking.Ingress{
 			},
 		},
 	},
+	"ignored.example.org": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ignored-ingress",
+			Namespace: "ns1",
+			Labels: map[string]string{
+				ignoreLabelKey: "true",
+			},
+		},
+		Spec: networking.IngressSpec{
+			Rules: []networking.IngressRule{
+				{
+					Host: "ignored.example.org",
+				},
+			},
+		},
+		Status: networking.IngressStatus{
+			LoadBalancer: networking.IngressLoadBalancerStatus{
+				Ingress: []networking.IngressLoadBalancerIngress{
+					{IP: "192.0.0.99"},
+				},
+			},
+		},
+	},
 }
 
 var testServices = map[string]*core.Service{
@@ -413,6 +472,25 @@ var testServices = map[string]*core.Service{
 			},
 		},
 	},
+	"ignored-svc.ns1": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ignored-svc",
+			Namespace: "ns1",
+			Labels: map[string]string{
+				ignoreLabelKey: "true",
+			},
+		},
+		Spec: core.ServiceSpec{
+			Type: core.ServiceTypeLoadBalancer,
+		},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{
+					{IP: "192.0.0.99"},
+				},
+			},
+		},
+	},
 }
 
 var testGateways = map[string]*gatewayapi_v1.Gateway{
@@ -449,6 +527,18 @@ var testHTTPRoutes = map[string]*gatewayapi_v1.HTTPRoute{
 			Hostnames: []gatewayapi_v1.Hostname{"route-1.gw-1.example.com"},
 		},
 	},
+	"ignored-route.gw-1.example.com": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ignored-route",
+			Namespace: "ns1",
+			Labels: map[string]string{
+				ignoreLabelKey: "true",
+			},
+		},
+		Spec: gatewayapi_v1.HTTPRouteSpec{
+			Hostnames: []gatewayapi_v1.Hostname{"ignored-route.gw-1.example.com"},
+		},
+	},
 }
 
 var testTLSRoutes = map[string]*gatewayapi_v1alpha2.TLSRoute{
@@ -464,6 +554,20 @@ var testTLSRoutes = map[string]*gatewayapi_v1alpha2.TLSRoute{
 			},
 		},
 	},
+	"ignored-tls-route.gw-1.example.com": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ignored-tls-route",
+			Namespace: "ns1",
+			Labels: map[string]string{
+				ignoreLabelKey: "true",
+			},
+		},
+		Spec: gatewayapi_v1alpha2.TLSRouteSpec{
+			Hostnames: []gatewayapi_v1alpha2.Hostname{
+				"ignored-tls-route.gw-1.example.com",
+			},
+		},
+	},
 }
 
 var testGRPCRoutes = map[string]*gatewayapi_v1.GRPCRoute{
@@ -475,6 +579,18 @@ var testGRPCRoutes = map[string]*gatewayapi_v1.GRPCRoute{
 		Spec: gatewayapi_v1.GRPCRouteSpec{
 			//ParentRefs: []gatewayapi_v1.ParentRef{},
 			Hostnames: []gatewayapi_v1.Hostname{"route-1.gw-1.example.com"},
+		},
+	},
+	"ignored-grpc-route.gw-1.example.com": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ignored-grpc-route",
+			Namespace: "ns1",
+			Labels: map[string]string{
+				ignoreLabelKey: "true",
+			},
+		},
+		Spec: gatewayapi_v1.GRPCRouteSpec{
+			Hostnames: []gatewayapi_v1.Hostname{"ignored-grpc-route.gw-1.example.com"},
 		},
 	},
 }
@@ -528,6 +644,24 @@ var testDNSEndpoints = map[string]*externaldnsv1.DNSEndpoint{
 					DNSName:    "dual.example.com",
 					RecordType: "AAAA",
 					Targets:    []string{"2001:db8::1"},
+				},
+			},
+		},
+	},
+	"ignored.example.com": &externaldnsv1.DNSEndpoint{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ignored-ep",
+			Namespace: "ns1",
+			Labels: map[string]string{
+				ignoreLabelKey: "true",
+			},
+		},
+		Spec: externaldnsv1.DNSEndpointSpec{
+			Endpoints: []*endpoint.Endpoint{
+				{
+					DNSName:    "ignored.example.com",
+					RecordType: "A",
+					Targets:    []string{"192.0.2.99"},
 				},
 			},
 		},
