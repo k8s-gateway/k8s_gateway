@@ -45,7 +45,7 @@ test:
 
 .PHONY: ci
 ci:
-	 golangci-lint run --timeout=5m0s
+	golangci-lint run --timeout=5m0s
 
 clean:
 	go clean
