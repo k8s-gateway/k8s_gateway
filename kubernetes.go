@@ -41,6 +41,7 @@ const (
 	externalDnsHostnameAnnotationKey = "external-dns.alpha.kubernetes.io/hostname"
 	externalDNSEndpointGroup         = "externaldns.k8s.io/v1alpha1"
 	externalDNSEndpointKind          = "DNSEndpoint"
+	ignoreLabelKey                   = "k8s-gateway.dns/ignore"
 )
 
 var (
@@ -404,6 +405,12 @@ func httpRouteHostnameIndexFunc(obj interface{}) ([]string, error) {
 		return []string{}, nil
 	}
 
+	// Check if object should be ignored
+	if checkIgnoreLabel(httpRoute.Labels) {
+		log.Debugf("Ignoring httpRoute %s due to %s label", httpRoute.Name, ignoreLabelKey)
+		return []string{}, nil
+	}
+
 	var hostnames []string
 	for _, hostname := range httpRoute.Spec.Hostnames {
 		log.Debugf("Adding index %s for httpRoute %s", httpRoute.Name, hostname)
@@ -415,6 +422,12 @@ func httpRouteHostnameIndexFunc(obj interface{}) ([]string, error) {
 func tlsRouteHostnameIndexFunc(obj interface{}) ([]string, error) {
 	tlsRoute, ok := obj.(*gatewayapi_v1alpha2.TLSRoute)
 	if !ok {
+		return []string{}, nil
+	}
+
+	// Check if object should be ignored
+	if checkIgnoreLabel(tlsRoute.Labels) {
+		log.Debugf("Ignoring tlsRoute %s due to %s label", tlsRoute.Name, ignoreLabelKey)
 		return []string{}, nil
 	}
 
@@ -432,6 +445,12 @@ func grpcRouteHostnameIndexFunc(obj interface{}) ([]string, error) {
 		return []string{}, nil
 	}
 
+	// Check if object should be ignored
+	if checkIgnoreLabel(grpcRoute.Labels) {
+		log.Debugf("Ignoring grpcRoute %s due to %s label", grpcRoute.Name, ignoreLabelKey)
+		return []string{}, nil
+	}
+
 	var hostnames []string
 	for _, hostname := range grpcRoute.Spec.Hostnames {
 		log.Debugf("Adding index %s for grpcRoute %s", grpcRoute.Name, hostname)
@@ -446,6 +465,12 @@ func ingressHostnameIndexFunc(obj interface{}) ([]string, error) {
 		return []string{}, nil
 	}
 
+	// Check if object should be ignored
+	if checkIgnoreLabel(ingress.Labels) {
+		log.Debugf("Ignoring ingress %s due to %s label", ingress.Name, ignoreLabelKey)
+		return []string{}, nil
+	}
+
 	var hostnames []string
 	for _, rule := range ingress.Spec.Rules {
 		log.Debugf("Adding index %s for ingress %s", rule.Host, ingress.Name)
@@ -457,6 +482,12 @@ func ingressHostnameIndexFunc(obj interface{}) ([]string, error) {
 func serviceHostnameIndexFunc(obj interface{}) ([]string, error) {
 	service, ok := obj.(*core.Service)
 	if !ok {
+		return []string{}, nil
+	}
+
+	// Check if object should be ignored
+	if checkIgnoreLabel(service.Labels) {
+		log.Debugf("Ignoring service %s due to %s label", service.Name, ignoreLabelKey)
 		return []string{}, nil
 	}
 
@@ -494,6 +525,13 @@ func dnsEndpointTargetIndexFunc(obj interface{}) ([]string, error) {
 	if !ok {
 		return []string{}, nil
 	}
+
+	// Check if object should be ignored
+	if checkIgnoreLabel(dnsEndpoint.Labels) {
+		log.Debugf("Ignoring dnsEndpoint %s due to %s label", dnsEndpoint.Name, ignoreLabelKey)
+		return []string{}, nil
+	}
+
 	var hostnames []string
 	for _, endpoint := range dnsEndpoint.Spec.Endpoints {
 		log.Debugf("Adding index %s for DNSEndpoint %s", endpoint.DNSName, dnsEndpoint.Name)
@@ -767,4 +805,14 @@ var dns1123SubdomainRegexp = regexp.MustCompile("^" + dns1123SubdomainFmt + "$")
 
 func isdns1123Hostname(value string) bool {
 	return dns1123SubdomainRegexp.MatchString(value)
+}
+
+// checkIgnoreLabel checks if the labels contain the ignoreLabelKey label set to "true"
+func checkIgnoreLabel(labels map[string]string) bool {
+	if labels != nil {
+		if ignoreValue, exists := labels[ignoreLabelKey]; exists && ignoreValue == "true" {
+			return true
+		}
+	}
+	return false
 }
