@@ -73,10 +73,6 @@ jobs:
             VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
             REVISION=${{ github.sha }}
             TARGETPLATFORM=${{ matrix.platform }}
-          cache-from: |
-            ${{ format('type=registry,ref=ghcr.io/{0}/build_cache:k8s_gateway-{1},mode=max', github.repository_owner, matrix.platform) }}
-          cache-to: |
-            ${{ github.event_name == 'release' && format('type=registry,ref=ghcr.io/{0}/build_cache:k8s_gateway-{1}', github.repository_owner, matrix.platform) || '' }}
           labels: |
             org.opencontainers.image.title=k8s_gateway
             org.opencontainers.image.url=https://ghcr.io/${{ github.repository_owner }}/k8s_gateway
