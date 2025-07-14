@@ -89,55 +89,23 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 		ctrl.controllers = append(ctrl.controllers, gatewayController)
 		log.Infof("GatewayAPI controller initialized")
 
-		for _, resourceName := range routingResources {
-			if !slices.Contains(configuredResources, resourceName) {
-				continue
-			}
-			resource := originalGateway.lookupResource(resourceName)
-			if resource == nil {
-				continue
-			}
-
-			switch resourceName {
-			case "HTTPRoute":
-				httpRouteController := cache.NewSharedIndexInformer(
-					&cache.ListWatch{
-						ListFunc:  httpRouteLister(ctx, ctrl.gwClient, core.NamespaceAll),
-						WatchFunc: httpRouteWatcher(ctx, ctrl.gwClient, core.NamespaceAll),
-					},
-					&gatewayapi_v1.HTTPRoute{},
-					defaultResyncPeriod,
-					cache.Indexers{httpRouteHostnameIndex: httpRouteHostnameIndexFunc},
-				)
-				resource.lookup = lookupHttpRouteIndex(httpRouteController, gatewayController, originalGateway.resourceFilters.gatewayClasses)
+		if slices.Contains(configuredResources, "HTTPRoute") && crdExists(apiextensionsClient, "httproutes.gateway.networking.k8s.io") {
+			if resource := originalGateway.lookupResource("HTTPRoute"); resource != nil {
+				httpRouteController := initializeHTTPRouteController(ctx, ctrl, gatewayController, originalGateway)
 				ctrl.controllers = append(ctrl.controllers, httpRouteController)
 				log.Infof("HTTPRoute controller initialized")
-
-			case "TLSRoute":
-				tlsRouteController := cache.NewSharedIndexInformer(
-					&cache.ListWatch{
-						ListFunc:  tlsRouteLister(ctx, ctrl.gwClient, core.NamespaceAll),
-						WatchFunc: tlsRouteWatcher(ctx, ctrl.gwClient, core.NamespaceAll),
-					},
-					&gatewayapi_v1alpha2.TLSRoute{},
-					defaultResyncPeriod,
-					cache.Indexers{tlsRouteHostnameIndex: tlsRouteHostnameIndexFunc},
-				)
-				resource.lookup = lookupTLSRouteIndex(tlsRouteController, gatewayController, originalGateway.resourceFilters.gatewayClasses)
+			}
+		}
+		if slices.Contains(configuredResources, "TLSRoute") && crdExists(apiextensionsClient, "tlsroutes.gateway.networking.k8s.io") {
+			if resource := originalGateway.lookupResource("TLSRoute"); resource != nil {
+				tlsRouteController := initializeTLSRouteController(ctx, ctrl, gatewayController, originalGateway)
 				ctrl.controllers = append(ctrl.controllers, tlsRouteController)
 				log.Infof("TLSRoute controller initialized")
-
-			case "GRPCRoute":
-				grpcRouteController := cache.NewSharedIndexInformer(
-					&cache.ListWatch{
-						ListFunc:  grpcRouteLister(ctx, ctrl.gwClient, core.NamespaceAll),
-						WatchFunc: grpcRouteWatcher(ctx, ctrl.gwClient, core.NamespaceAll),
-					},
-					&gatewayapi_v1.GRPCRoute{},
-					defaultResyncPeriod,
-					cache.Indexers{grpcRouteHostnameIndex: grpcRouteHostnameIndexFunc},
-				)
-				resource.lookup = lookupGRPCRouteIndex(grpcRouteController, gatewayController, originalGateway.resourceFilters.gatewayClasses)
+			}
+		}
+		if slices.Contains(configuredResources, "GRPCRoute") && crdExists(apiextensionsClient, "grpcroutes.gateway.networking.k8s.io") {
+			if resource := originalGateway.lookupResource("GRPCRoute"); resource != nil {
+				grpcRouteController := initializeGRPCRouteController(ctx, ctrl, gatewayController, originalGateway)
 				ctrl.controllers = append(ctrl.controllers, grpcRouteController)
 				log.Infof("GRPCRoute controller initialized")
 			}
@@ -198,6 +166,60 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 	}
 
 	return ctrl
+}
+
+func initializeHTTPRouteController(ctx context.Context, ctrl *KubeController, gatewayController cache.SharedIndexInformer, originalGateway *Gateway) cache.SharedIndexInformer {
+	httpRouteController := cache.NewSharedIndexInformer(
+		&cache.ListWatch{
+			ListFunc:  httpRouteLister(ctx, ctrl.gwClient, core.NamespaceAll),
+			WatchFunc: httpRouteWatcher(ctx, ctrl.gwClient, core.NamespaceAll),
+		},
+		&gatewayapi_v1.HTTPRoute{},
+		defaultResyncPeriod,
+		cache.Indexers{httpRouteHostnameIndex: httpRouteHostnameIndexFunc},
+	)
+	originalGateway.lookupResource("HTTPRoute").lookup = lookupHttpRouteIndex(
+		httpRouteController,
+		gatewayController,
+		originalGateway.resourceFilters.gatewayClasses,
+	)
+	return httpRouteController
+}
+
+func initializeTLSRouteController(ctx context.Context, ctrl *KubeController, gatewaycontroller cache.SharedIndexInformer, originalGateway *Gateway) cache.SharedIndexInformer {
+	tlsRouteController := cache.NewSharedIndexInformer(
+		&cache.ListWatch{
+			ListFunc:  tlsRouteLister(ctx, ctrl.gwClient, core.NamespaceAll),
+			WatchFunc: tlsRouteWatcher(ctx, ctrl.gwClient, core.NamespaceAll),
+		},
+		&gatewayapi_v1alpha2.TLSRoute{},
+		defaultResyncPeriod,
+		cache.Indexers{tlsRouteHostnameIndex: tlsRouteHostnameIndexFunc},
+	)
+	originalGateway.lookupResource("TLSRoute").lookup = lookupTLSRouteIndex(
+		tlsRouteController,
+		gatewaycontroller,
+		originalGateway.resourceFilters.gatewayClasses,
+	)
+	return tlsRouteController
+}
+
+func initializeGRPCRouteController(ctx context.Context, ctrl *KubeController, gatewayController cache.SharedIndexInformer, originalGateway *Gateway) cache.SharedIndexInformer {
+	grpcRouteController := cache.NewSharedIndexInformer(
+		&cache.ListWatch{
+			ListFunc:  grpcRouteLister(ctx, ctrl.gwClient, core.NamespaceAll),
+			WatchFunc: grpcRouteWatcher(ctx, ctrl.gwClient, core.NamespaceAll),
+		},
+		&gatewayapi_v1.GRPCRoute{},
+		defaultResyncPeriod,
+		cache.Indexers{grpcRouteHostnameIndex: grpcRouteHostnameIndexFunc},
+	)
+	originalGateway.lookupResource("GRPCRoute").lookup = lookupGRPCRouteIndex(
+		grpcRouteController,
+		gatewayController,
+		originalGateway.resourceFilters.gatewayClasses,
+	)
+	return grpcRouteController
 }
 
 func (ctrl *KubeController) run() {
