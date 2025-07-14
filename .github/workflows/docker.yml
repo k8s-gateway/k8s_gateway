@@ -14,6 +14,10 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build:
     name: Build (${{ matrix.platform }})
@@ -25,9 +29,6 @@ jobs:
             runner: ubuntu-24.04
           - platform: arm64
             runner: ubuntu-24.04-arm
-    permissions:
-      contents: read
-      packages: write
     outputs:
       amd64: ${{ steps.digest.outputs.amd64 }}
       arm64: ${{ steps.digest.outputs.arm64 }}
