@@ -1,8 +1,8 @@
+FROM docker.io/library/golang:1.24-alpine AS builder
 
 ARG VERSION=dev
 ARG REVISION=dev
 ARG TARGETPLATFORM=linux/amd64
-FROM docker.io/library/golang:1.24-alpine AS builder
 
 WORKDIR /build
 
