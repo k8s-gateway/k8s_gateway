@@ -122,5 +122,15 @@ func parse(c *caddy.Controller) (*Gateway, error) {
 			}
 		}
 	}
+
+	if len(gw.ConfiguredResources) == 0 {
+		log.Warning("No resources specified in config using defaults")
+		resources := []string{}
+		for _, r := range staticResources {
+			resources = append(resources, r.name)
+		}
+		gw.updateResources(resources)
+		gw.SetConfiguredResources(resources)
+	}
 	return gw, nil
 }
