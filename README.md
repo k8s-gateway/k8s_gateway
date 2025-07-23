@@ -8,14 +8,14 @@ This plugin relies on its own connection to the k8s API server and doesn't share
 
 `k8s_gateway` resolves Kubernetes resources with their external IP addresses based on zones specified in the configuration. This plugin will resolve the following type of resources:
 
-| Kind | Matching Against | External IPs are from |
-| ---- | ---------------- | -------- |
-| HTTPRoute<sup>[1](#foot1)</sup> | all FQDNs from `spec.hostnames` matching configured zones | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
-| TLSRoute<sup>[1](#foot1) | all FQDNs from `spec.hostnames` matching configured zones | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
-| GRPCRoute<sup>[1](#foot1) | all FQDNs from `spec.hostnames` matching configured zones | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
-| Ingress | all FQDNs from `spec.rules[*].host` matching configured zones | `.status.loadBalancer.ingress` |
-| Service<sup>[3](#foot3)</sup> | `name.namespace` + any of the configured zones OR any string consisting of lower case alphanumeric characters, '-' or '.', specified in the `coredns.io/hostname` or `external-dns.alpha.kubernetes.io/hostname` annotations (see [this](https://github.com/k8s-gateway/k8s_gateway/blob/master/test/single-stack/service-annotation.yml#L8) for an example) | `.status.loadBalancer.ingress` |
-| DNSEndpoint<sup>[4](#foot4)</sup> | `spec.endpoints[*].targets` | |
+| Kind                              | Matching Against                                                                                                                                                                                                                                                                                                                                             | External IPs are from                            |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
+| HTTPRoute<sup>[1](#foot1)</sup>   | all FQDNs from `spec.hostnames` matching configured zones                                                                                                                                                                                                                                                                                                    | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
+| TLSRoute<sup>[1](#foot1)          | all FQDNs from `spec.hostnames` matching configured zones                                                                                                                                                                                                                                                                                                    | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
+| GRPCRoute<sup>[1](#foot1)         | all FQDNs from `spec.hostnames` matching configured zones                                                                                                                                                                                                                                                                                                    | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
+| Ingress                           | all FQDNs from `spec.rules[*].host` matching configured zones                                                                                                                                                                                                                                                                                                | `.status.loadBalancer.ingress`                   |
+| Service<sup>[3](#foot3)</sup>     | `name.namespace` + any of the configured zones OR any string consisting of lower case alphanumeric characters, '-' or '.', specified in the `coredns.io/hostname` or `external-dns.alpha.kubernetes.io/hostname` annotations (see [this](https://github.com/k8s-gateway/k8s_gateway/blob/master/test/single-stack/service-annotation.yml#L8) for an example) | `.status.loadBalancer.ingress`                   |
+| DNSEndpoint<sup>[4](#foot4)</sup> | `spec.endpoints[*].targets`                                                                                                                                                                                                                                                                                                                                  |                                                  |
 
 
 <a name="f1">1</a>: Currently supported version of GatewayAPI CRDs is v1.0.0+ experimental channel.</br>
@@ -66,7 +66,7 @@ k8s_gateway [ZONES...]
 }
 ```
 
-* `resources` a subset of supported Kubernetes resources to watch. By default, all supported resources are monitored. Available options are `[ Ingress | Service | HTTPRoute | TLSRoute | GRPCRoute | DNSEndpoint ]`.
+* `resources` a subset of supported Kubernetes resources to watch. Available options are `[ Ingress | Service | HTTPRoute | TLSRoute | GRPCRoute | DNSEndpoint ]`. If no resources are specified only `Ingress` and `Service` will be monitored
 * `ingressClasses` to filter `Ingress` resources by `ingressClassName` values. Watches all by default.
 * `gatewayClasses` to filter `Gateway` resources by `gatewayClassName` values. Watches all by default.
 * `ttl` can be used to override the default TTL value of 60 seconds.
@@ -86,6 +86,71 @@ k8s_gateway example.com {
     kubeconfig /.kube/config
 }
 ```
+
+### Required Kubernetes permissions
+
+To monitor any of the resources `k8s_gateway` requires the following permissions in the cluster. If you installed using either the Helm chart of the `install-clusterwide.yml` manifest, a `ClusterRole`, `ClusterRoleBinding`, and `ServiceAccount` will have been added to allow monitoring `Ingress` and `Service` resources.
+
+* **General CRDs**
+  ```yaml
+  - apiGroups:
+      - apiextensions.k8s.io
+    resources:
+      - customresourcedefinitions
+    verbs:
+      - get
+      - list
+      - watch
+  ```
+* **Ingress**
+  ```yaml
+  - apiGroups:
+    - extensions
+    - networking.k8s.io
+    resources:
+    - ingresses
+    verbs:
+    - list
+    - watch
+  ```
+* **Service**
+  ```yaml
+  - apiGroups:
+    - ""
+    resources:
+    - services
+    - namespaces
+    verbs:
+    - list
+    - watch
+  ```
+* **HTTPRoute, TLSRoute, GRPCRoute**
+  ```yaml
+  - apiGroups:
+    - gateway.networking.k8s.io
+    resources:
+    - "*"
+    verbs:
+    - watch
+    - list
+  ```
+* **DNSEndpoint**
+  ```yaml
+  - apiGroups:
+    - externaldns.k8s.io
+    resources:
+    - dnsendpoints
+    verbs:
+    - get
+    - watch
+    - list
+  - apiGroups:
+    - externaldns.k8s.io
+    resources:
+      - dnsendpoints/status
+    verbs:
+      - "*"
+  ```
 
 ## Excluding Specific Resources
 
