@@ -66,7 +66,7 @@ k8s_gateway [ZONES...]
 }
 ```
 
-* `resources` a subset of supported Kubernetes resources to watch. By default, all supported resources are monitored. Available options are `[ Ingress | Service | HTTPRoute | TLSRoute | GRPCRoute | DNSEndpoint ]`.
+* `resources` a subset of supported Kubernetes resources to watch. Available options are `[ Ingress | Service | HTTPRoute | TLSRoute | GRPCRoute | DNSEndpoint ]`. If no resources are specified only `Ingress` and `Service` will be monitored
 * `ingressClasses` to filter `Ingress` resources by `ingressClassName` values. Watches all by default.
 * `gatewayClasses` to filter `Gateway` resources by `gatewayClassName` values. Watches all by default.
 * `ttl` can be used to override the default TTL value of 60 seconds.
@@ -86,6 +86,71 @@ k8s_gateway example.com {
     kubeconfig /.kube/config
 }
 ```
+
+### Required Kubernetes permissions
+
+To monitor any of the resources `k8s_gateway` requires the following permissions in the cluster. If you installed using either the Helm chart of the `install-clusterwide.yml` manifest, a `ClusterRole`, `ClusterRoleBinding`, and `ServiceAccount` will have been added to allow monitoring `Ingress` and `Service` resources.
+
+* **General CRDs**
+  ```yaml
+  - apiGroups:
+      - apiextensions.k8s.io
+    resources:
+      - customresourcedefinitions
+    verbs:
+      - get
+      - list
+      - watch
+  ```
+* **Ingress**
+  ```yaml
+  - apiGroups:
+    - extensions
+    - networking.k8s.io
+    resources:
+    - ingresses
+    verbs:
+    - list
+    - watch
+  ```
+* **Service**
+  ```yaml
+  - apiGroups:
+    - ""
+    resources:
+    - services
+    - namespaces
+    verbs:
+    - list
+    - watch
+  ```
+* **HTTPRoute, TLSRoute, GRPCRoute**
+  ```yaml
+  - apiGroups:
+    - gateway.networking.k8s.io
+    resources:
+    - "*"
+    verbs:
+    - watch
+    - list
+  ```
+* **DNSEndpoint**
+  ```yaml
+  - apiGroups:
+    - externaldns.k8s.io
+    resources:
+    - dnsendpoints
+    verbs:
+    - get
+    - watch
+    - list
+  - apiGroups:
+    - externaldns.k8s.io
+    resources:
+      - dnsendpoints/status
+    verbs:
+      - "*"
+  ```
 
 ## Excluding Specific Resources
 

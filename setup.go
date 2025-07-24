@@ -10,7 +10,10 @@ import (
 	clog "github.com/coredns/coredns/plugin/pkg/log"
 )
 
-var log = clog.NewWithPlugin(thisPlugin)
+var (
+	log              = clog.NewWithPlugin(thisPlugin)
+	DefaultResources = []string{"Ingress", "Service"}
+)
 
 const thisPlugin = "k8s_gateway"
 
@@ -121,6 +124,12 @@ func parse(c *caddy.Controller) (*Gateway, error) {
 				return nil, c.Errf("Unknown property '%s'", c.Val())
 			}
 		}
+	}
+
+	if len(gw.ConfiguredResources) == 0 {
+		log.Warningf("No resources specified in config. Using defaults: %s", DefaultResources)
+		gw.updateResources(DefaultResources)
+		gw.SetConfiguredResources(DefaultResources)
 	}
 	return gw, nil
 }
