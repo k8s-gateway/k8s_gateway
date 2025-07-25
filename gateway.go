@@ -202,8 +202,7 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	log.Debugf("computed response cnames %v", dnsData.CNAME)
 
 	// Fall through if no host matches
-	noDataFound := len(dnsData.Addresses) == 0 && len(dnsData.TXT) == 0 && len(dnsData.CNAME) == 0
-	if noDataFound && gw.Fall.Through(qname) {
+	if dnsData.IsEmpty() && gw.Fall.Through(qname) {
 		return plugin.NextOrFailure(gw.Name(), gw.Next, ctx, w, r)
 	}
 
@@ -545,7 +544,7 @@ func (gw *Gateway) handleCNAMEQuery(m *dns.Msg, state request.Request, cnames []
 		gw.setNegativeResponse(m, state)
 		// Return NXDOMAIN for truly non-existent records (not for existing resources with no specific data)
 		// Only set NXDOMAIN for queries that clearly indicate non-existence
-		if noDataFound && !isRootZoneQuery && strings.Contains(strings.ToLower(state.Name()), "nonexistent") {
+		if noDataFound && !isRootZoneQuery {
 			m.Rcode = dns.RcodeNameError
 		}
 		return
