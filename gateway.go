@@ -281,13 +281,6 @@ func (gw *Gateway) toWildcardQName(qName, zone string) string {
 	return strings.Join(parts, ".")
 }
 
-// Gets the set of addresses associated with the first set of index keys
-// that is in the indexer.
-func (gw *Gateway) getMatchingAddresses(indexKeySets [][]string) ([]netip.Addr, []string) {
-	addrs, raws, _ := gw.getMatchingAddressesWithCNAME(indexKeySets)
-	return addrs, raws
-}
-
 // Gets the set of addresses and CNAME records associated with the first set of index keys
 // that is in the indexer. This is used for CNAME-aware lookups.
 func (gw *Gateway) getMatchingAddressesWithCNAME(indexKeySets [][]string) ([]netip.Addr, []string, []string) {
