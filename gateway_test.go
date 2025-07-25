@@ -291,11 +291,12 @@ var testServiceIndexes = map[string][]netip.Addr{
 	"dns1.kube-system": {netip.MustParseAddr("192.0.1.53")},
 }
 
-func testServiceLookup(keys []string) (results []netip.Addr, raws []string, cnames []string) {
+func testServiceLookup(keys []string) DNSData {
+	var results []netip.Addr
 	for _, key := range keys {
 		results = append(results, testServiceIndexes[strings.ToLower(key)]...)
 	}
-	return results, raws, cnames
+	return DNSData{Addresses: results}
 }
 
 var testIngressIndexes = map[string][]netip.Addr{
@@ -308,11 +309,12 @@ var testIngressIndexes = map[string][]netip.Addr{
 	"specific-subdomain.wildcard.example.com": {netip.MustParseAddr("192.0.0.7")},
 }
 
-func testIngressLookup(keys []string) (results []netip.Addr, raws []string, cnames []string) {
+func testIngressLookup(keys []string) DNSData {
+	var results []netip.Addr
 	for _, key := range keys {
 		results = append(results, testIngressIndexes[strings.ToLower(key)]...)
 	}
-	return results, raws, cnames
+	return DNSData{Addresses: results}
 }
 
 var testRouteIndexes = map[string][]netip.Addr{
@@ -320,11 +322,12 @@ var testRouteIndexes = map[string][]netip.Addr{
 	"shadow.example.com":    {netip.MustParseAddr("192.0.2.4")},
 }
 
-func testRouteLookup(keys []string) (results []netip.Addr, raws []string, cnames []string) {
+func testRouteLookup(keys []string) DNSData {
+	var results []netip.Addr
 	for _, key := range keys {
 		results = append(results, testRouteIndexes[strings.ToLower(key)]...)
 	}
-	return results, raws, cnames
+	return DNSData{Addresses: results}
 }
 
 var testDNSEndpointIndexes = map[string][]netip.Addr{
@@ -347,7 +350,11 @@ var testDNSEndpointCnameIndexes = map[string][]string{
 	"www.example.com":   {"web.example.com"},
 }
 
-func testDNSEndpointLookup(keys []string) (results []netip.Addr, raws []string, cnames []string) {
+func testDNSEndpointLookup(keys []string) DNSData {
+	var results []netip.Addr
+	var raws []string
+	var cnames []string
+
 	for _, key := range keys {
 		results = append(results, testDNSEndpointIndexes[strings.ToLower(key)]...)
 	}
@@ -357,7 +364,7 @@ func testDNSEndpointLookup(keys []string) (results []netip.Addr, raws []string, 
 	for _, key := range keys {
 		cnames = append(cnames, testDNSEndpointCnameIndexes[strings.ToLower(key)]...)
 	}
-	return results, raws, cnames
+	return DNSData{Addresses: results, TXT: raws, CNAME: cnames}
 }
 
 func setupLookupFuncs(gw *Gateway) {

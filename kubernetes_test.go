@@ -786,7 +786,8 @@ func TestDNSEndpointCNAMELookup(t *testing.T) {
 			ctrl := createMockDNSEndpointController([]*externaldnsv1.DNSEndpoint{test.endpoint})
 			lookupFunc := lookupDNSEndpointWithCNAME(ctrl)
 
-			addrs, raws, cnames := lookupFunc(test.indexKeys)
+			data := lookupFunc(test.indexKeys)
+			addrs, raws, cnames := data.Addresses, data.TXT, data.CNAME
 
 			if len(addrs) != test.expectedAddrs {
 				t.Errorf("Expected %d addresses, got %d", test.expectedAddrs, len(addrs))
@@ -870,8 +871,11 @@ func (m *mockDNSEndpointInformer) SetWatchErrorHandlerWithContext(handler cache.
 func (m *mockDNSEndpointInformer) AddIndexers(indexers cache.Indexers) error { return nil }
 
 // Enhanced lookupDNSEndpoint that supports CNAME records for testing
-func lookupDNSEndpointWithCNAME(ctrl cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string, cnames []string) {
-	return func(indexKeys []string) (result []netip.Addr, raw []string, cname []string) {
+func lookupDNSEndpointWithCNAME(ctrl cache.SharedIndexInformer) func([]string) DNSData {
+	return func(indexKeys []string) DNSData {
+		var result []netip.Addr
+		var raw []string
+		var cname []string
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := ctrl.GetIndexer().ByIndex(externalDNSHostnameIndex, strings.ToLower(key))
@@ -911,6 +915,6 @@ func lookupDNSEndpointWithCNAME(ctrl cache.SharedIndexInformer) func([]string) (
 				}
 			}
 		}
-		return result, raw, cname
+		return DNSData{Addresses: result, TXT: raw, CNAME: cname}
 	}
 }

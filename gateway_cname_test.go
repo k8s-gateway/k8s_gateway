@@ -176,7 +176,10 @@ func setupRealisticCNAMEChain(gw *Gateway) {
 	}
 
 	// Lookup function that returns both CNAMEs and addresses
-	realisticLookupFunc := func(indexKeys []string) (results []netip.Addr, raws []string, cnames []string) {
+	realisticLookupFunc := func(indexKeys []string) DNSData {
+		var results []netip.Addr
+		var cnames []string
+
 		for _, key := range indexKeys {
 			// Check for CNAME data
 			if cnameTargets, exists := realisticCNAMEIndexes[strings.ToLower(key)]; exists {
@@ -187,7 +190,7 @@ func setupRealisticCNAMEChain(gw *Gateway) {
 				results = append(results, addrs...)
 			}
 		}
-		return results, raws, cnames
+		return DNSData{Addresses: results, CNAME: cnames}
 	}
 
 	// Apply the lookup function to DNSEndpoint resource (which supports CNAMEs)
@@ -268,13 +271,14 @@ func setupCNAMELoop(gw *Gateway) {
 		"deep4.example.com": {"deep5.example.com"}, // deep4 -> deep5 (exceeds depth limit)
 	}
 
-	loopLookupFunc := func(indexKeys []string) (results []netip.Addr, raws []string, cnames []string) {
+	loopLookupFunc := func(indexKeys []string) DNSData {
+		var cnames []string
 		for _, key := range indexKeys {
 			if cnameTargets, exists := loopCNAMEIndexes[strings.ToLower(key)]; exists {
 				cnames = append(cnames, cnameTargets...)
 			}
 		}
-		return results, raws, cnames
+		return DNSData{CNAME: cnames}
 	}
 
 	if resource := gw.lookupResource("DNSEndpoint"); resource != nil {

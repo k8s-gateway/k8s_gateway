@@ -13,8 +13,15 @@ import (
 	"github.com/miekg/dns"
 )
 
+// DNSData represents the structured return data from DNS lookups
+type DNSData struct {
+	Addresses []netip.Addr // A and AAAA records
+	TXT       []string     // TXT records
+	CNAME     []string     // CNAME records
+}
+
 // Unified lookup function that supports all record types including CNAME
-type lookupFunc func(indexKeys []string) (results []netip.Addr, raws []string, cnames []string)
+type lookupFunc func(indexKeys []string) DNSData
 
 type resourceWithIndex struct {
 	name   string
@@ -31,7 +38,7 @@ var staticResources = []*resourceWithIndex{
 	{name: "DNSEndpoint", lookup: noop},
 }
 
-var noop lookupFunc = func([]string) (result []netip.Addr, raws []string, cnames []string) { return }
+var noop lookupFunc = func([]string) DNSData { return DNSData{} }
 
 var (
 	ttlDefault           = uint32(60)
@@ -189,13 +196,13 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 		return code, err
 	}
 
-	addrs, raws, cnames := gw.getMatchingAddressesWithCNAME(indexKeySets)
-	log.Debugf("computed response addresses %v", addrs)
-	log.Debugf("computed response raws %v", raws)
-	log.Debugf("computed response cnames %v", cnames)
+	dnsData := gw.getMatchingDNSData(indexKeySets)
+	log.Debugf("computed response addresses %v", dnsData.Addresses)
+	log.Debugf("computed response raws %v", dnsData.TXT)
+	log.Debugf("computed response cnames %v", dnsData.CNAME)
 
 	// Fall through if no host matches
-	noDataFound := len(addrs) == 0 && len(raws) == 0 && len(cnames) == 0
+	noDataFound := len(dnsData.Addresses) == 0 && len(dnsData.TXT) == 0 && len(dnsData.CNAME) == 0
 	if noDataFound && gw.Fall.Through(qname) {
 		return plugin.NextOrFailure(gw.Name(), gw.Next, ctx, w, r)
 	}
@@ -206,7 +213,7 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	var ipv4Addrs []netip.Addr
 	var ipv6Addrs []netip.Addr
 
-	for _, addr := range addrs {
+	for _, addr := range dnsData.Addresses {
 		if addr.Is4() {
 			ipv4Addrs = append(ipv4Addrs, addr)
 		}
@@ -216,7 +223,7 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	}
 
 	// Build DNS response based on a query type and available data
-	gw.processQueryResponse(m, state, ipv4Addrs, ipv6Addrs, raws, cnames, isRootZoneQuery, noDataFound)
+	gw.processQueryResponse(m, state, ipv4Addrs, ipv6Addrs, dnsData.TXT, dnsData.CNAME, isRootZoneQuery, noDataFound)
 
 	// Force to true to fix broken behaviour of legacy glibc `getaddrinfo`.
 	// See https://github.com/coredns/coredns/pull/3573
@@ -281,21 +288,20 @@ func (gw *Gateway) toWildcardQName(qName, zone string) string {
 	return strings.Join(parts, ".")
 }
 
-// Gets the set of addresses and CNAME records associated with the first set of index keys
-// that is in the indexer. This is used for CNAME-aware lookups.
-func (gw *Gateway) getMatchingAddressesWithCNAME(indexKeySets [][]string) ([]netip.Addr, []string, []string) {
+// Gets the DNS data associated with the first set of index keys that is in the indexer.
+func (gw *Gateway) getMatchingDNSData(indexKeySets [][]string) DNSData {
 	// Iterate over supported resources and lookup DNS queries
 	// Stop once we've found at least one match
 	for _, indexKeys := range indexKeySets {
 		for _, resource := range gw.Resources {
-			addrs, raws, cnames := resource.lookup(indexKeys)
-			if len(addrs) > 0 || len(raws) > 0 || len(cnames) > 0 {
-				return addrs, raws, cnames
+			data := resource.lookup(indexKeys)
+			if len(data.Addresses) > 0 || len(data.TXT) > 0 || len(data.CNAME) > 0 {
+				return data
 			}
 		}
 	}
 
-	return nil, nil, nil
+	return DNSData{}
 }
 
 // Name implements the Handler interface.
@@ -390,19 +396,19 @@ func (gw *Gateway) resolveCNAMEChainWithVisited(cname string, zone string, maxDe
 	indexKeySets := gw.getQueryIndexKeySets(canonicalCname, canonicalZone)
 	log.Debugf("Generated index key sets for CNAME lookup: %v", indexKeySets)
 
-	addrs, raws, nextCnames := gw.getMatchingAddressesWithCNAME(indexKeySets)
-	log.Debugf("CNAME lookup results - addrs: %d, raws: %d, cnames: %d", len(addrs), len(raws), len(nextCnames))
+	data := gw.getMatchingDNSData(indexKeySets)
+	log.Debugf("CNAME lookup results - addrs: %d, raws: %d, cnames: %d", len(data.Addresses), len(data.TXT), len(data.CNAME))
 
 	// If we found IP addresses, return them
-	if len(addrs) > 0 {
-		log.Debugf("CNAME chain resolved to %d addresses: %v", len(addrs), addrs)
-		return addrs, nil
+	if len(data.Addresses) > 0 {
+		log.Debugf("CNAME chain resolved to %d addresses: %v", len(data.Addresses), data.Addresses)
+		return data.Addresses, nil
 	}
 
 	// If we found another CNAME, follow the chain
-	if len(nextCnames) > 0 {
-		log.Debugf("Following CNAME chain from %s to %s", canonicalCname, nextCnames[0])
-		return gw.resolveCNAMEChainWithVisited(nextCnames[0], canonicalZone, maxDepth-1, visited)
+	if len(data.CNAME) > 0 {
+		log.Debugf("Following CNAME chain from %s to %s", canonicalCname, data.CNAME[0])
+		return gw.resolveCNAMEChainWithVisited(data.CNAME[0], canonicalZone, maxDepth-1, visited)
 	}
 
 	// If no direct match and target looks like an external domain, try external resolution
@@ -414,7 +420,7 @@ func (gw *Gateway) resolveCNAMEChainWithVisited(cname string, zone string, maxDe
 	}
 
 	// If still no match and we're within our zone, this is a dead end
-	_ = raws // suppress unused variable warning
+	_ = data.TXT // suppress unused variable warning
 	err := fmt.Errorf("CNAME target %s not found in zone %s", canonicalCname, canonicalZone)
 	log.Warningf("%v", err)
 	return nil, err
@@ -425,15 +431,13 @@ func (gw *Gateway) SelfAddress(state request.Request) (records []dns.RR) {
 
 	var addrs1, addrs2 []netip.Addr
 	for _, resource := range gw.Resources {
-		results, raws, _ := resource.lookup([]string{gw.apex})
-		_ = raws
-		if len(results) > 0 {
-			addrs1 = append(addrs1, results...)
+		data1 := resource.lookup([]string{gw.apex})
+		if len(data1.Addresses) > 0 {
+			addrs1 = append(addrs1, data1.Addresses...)
 		}
-		results, raws, _ = resource.lookup([]string{gw.secondNS})
-		_ = raws
-		if len(results) > 0 {
-			addrs2 = append(addrs2, results...)
+		data2 := resource.lookup([]string{gw.secondNS})
+		if len(data2.Addresses) > 0 {
+			addrs2 = append(addrs2, data2.Addresses...)
 		}
 	}
 
