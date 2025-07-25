@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/netip"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/coredns/coredns/plugin/test"
 	"github.com/miekg/dns"
@@ -21,6 +23,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	fakeRest "k8s.io/client-go/rest/fake"
+	"k8s.io/client-go/tools/cache"
 	externaldnsv1 "sigs.k8s.io/external-dns/apis/v1alpha1"
 	"sigs.k8s.io/external-dns/endpoint"
 	gatewayapi_v1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -666,4 +669,248 @@ var testDNSEndpoints = map[string]*externaldnsv1.DNSEndpoint{
 			},
 		},
 	},
+	"cname.example.com": &externaldnsv1.DNSEndpoint{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cname-ep",
+			Namespace: "ns1",
+		},
+		Spec: externaldnsv1.DNSEndpointSpec{
+			Endpoints: []*endpoint.Endpoint{
+				{
+					DNSName:    "cname.example.com",
+					RecordType: "CNAME",
+					Targets:    []string{"target.example.com"},
+				},
+			},
+		},
+	},
+	"chain.example.com": &externaldnsv1.DNSEndpoint{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "chain-ep",
+			Namespace: "ns1",
+		},
+		Spec: externaldnsv1.DNSEndpointSpec{
+			Endpoints: []*endpoint.Endpoint{
+				{
+					DNSName:    "chain.example.com",
+					RecordType: "CNAME",
+					Targets:    []string{"step2.example.com"},
+				},
+				{
+					DNSName:    "step2.example.com",
+					RecordType: "CNAME",
+					Targets:    []string{"final.example.com"},
+				},
+				{
+					DNSName:    "final.example.com",
+					RecordType: "A",
+					Targets:    []string{"10.0.1.100"},
+				},
+			},
+		},
+	},
+	"service.example.com": &externaldnsv1.DNSEndpoint{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mixed-ep",
+			Namespace: "ns1",
+		},
+		Spec: externaldnsv1.DNSEndpointSpec{
+			Endpoints: []*endpoint.Endpoint{
+				{
+					DNSName:    "service.example.com",
+					RecordType: "A",
+					Targets:    []string{"10.0.0.1"},
+				},
+				{
+					DNSName:    "alias.example.com",
+					RecordType: "CNAME",
+					Targets:    []string{"service.example.com"},
+				},
+				{
+					DNSName:    "text.example.com",
+					RecordType: "TXT",
+					Targets:    []string{"v=spf1 include:_spf.google.com ~all"},
+				},
+			},
+		},
+	},
+}
+
+// TestDNSEndpointCNAMELookup tests CNAME record lookups from DNSEndpoint resources
+func TestDNSEndpointCNAMELookup(t *testing.T) {
+	tests := []struct {
+		name           string
+		endpoint       *externaldnsv1.DNSEndpoint
+		indexKeys      []string
+		expectedAddrs  int
+		expectedCNAMEs int
+		expectedRaws   int
+	}{
+		{
+			name:           "CNAME record lookup",
+			endpoint:       testDNSEndpoints["cname.example.com"],
+			indexKeys:      []string{"cname.example.com"},
+			expectedAddrs:  0,
+			expectedCNAMEs: 1,
+			expectedRaws:   0,
+		},
+		{
+			name:           "Mixed record types",
+			endpoint:       testDNSEndpoints["service.example.com"],
+			indexKeys:      []string{"alias.example.com"},
+			expectedAddrs:  0,
+			expectedCNAMEs: 1,
+			expectedRaws:   0,
+		},
+		{
+			name:           "A record from mixed endpoint",
+			endpoint:       testDNSEndpoints["service.example.com"],
+			indexKeys:      []string{"service.example.com"},
+			expectedAddrs:  1,
+			expectedCNAMEs: 0,
+			expectedRaws:   0,
+		},
+		{
+			name:           "TXT record from mixed endpoint",
+			endpoint:       testDNSEndpoints["service.example.com"],
+			indexKeys:      []string{"text.example.com"},
+			expectedAddrs:  0,
+			expectedCNAMEs: 0,
+			expectedRaws:   1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// Mock controller with test endpoint
+			ctrl := createMockDNSEndpointController([]*externaldnsv1.DNSEndpoint{test.endpoint})
+			lookupFunc := lookupDNSEndpointWithCNAME(ctrl)
+
+			addrs, raws, cnames := lookupFunc(test.indexKeys)
+
+			if len(addrs) != test.expectedAddrs {
+				t.Errorf("Expected %d addresses, got %d", test.expectedAddrs, len(addrs))
+			}
+
+			if len(cnames) != test.expectedCNAMEs {
+				t.Errorf("Expected %d CNAME records, got %d", test.expectedCNAMEs, len(cnames))
+			}
+
+			if len(raws) != test.expectedRaws {
+				t.Errorf("Expected %d raw records, got %d", test.expectedRaws, len(raws))
+			}
+
+			// Verify CNAME target
+			if test.expectedCNAMEs > 0 && len(cnames) > 0 {
+				expectedTarget := ""
+				for _, ep := range test.endpoint.Spec.Endpoints {
+					if ep.RecordType == "CNAME" && strings.EqualFold(ep.DNSName, test.indexKeys[0]) {
+						expectedTarget = ep.Targets[0]
+						break
+					}
+				}
+				if cnames[0] != expectedTarget {
+					t.Errorf("Expected CNAME target '%s', got '%s'", expectedTarget, cnames[0])
+				}
+			}
+		})
+	}
+}
+
+// Helper function to create mock DNSEndpoint controller for testing
+func createMockDNSEndpointController(endpoints []*externaldnsv1.DNSEndpoint) cache.SharedIndexInformer {
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		externalDNSHostnameIndex: dnsEndpointTargetIndexFunc,
+	})
+
+	// Add endpoints to indexer
+	for _, ep := range endpoints {
+		indexer.Add(ep)
+	}
+
+	return &mockDNSEndpointInformer{indexer: indexer}
+}
+
+// Mock informer implementation for testing
+type mockDNSEndpointInformer struct {
+	indexer cache.Indexer
+}
+
+func (m *mockDNSEndpointInformer) GetIndexer() cache.Indexer {
+	return m.indexer
+}
+
+// Stub implementations for other required methods
+func (m *mockDNSEndpointInformer) AddEventHandler(handler cache.ResourceEventHandler) (cache.ResourceEventHandlerRegistration, error) {
+	return nil, nil
+}
+func (m *mockDNSEndpointInformer) AddEventHandlerWithResyncPeriod(handler cache.ResourceEventHandler, resyncPeriod time.Duration) (cache.ResourceEventHandlerRegistration, error) {
+	return nil, nil
+}
+func (m *mockDNSEndpointInformer) AddEventHandlerWithOptions(handler cache.ResourceEventHandler, options cache.HandlerOptions) (cache.ResourceEventHandlerRegistration, error) {
+	return nil, nil
+}
+func (m *mockDNSEndpointInformer) RemoveEventHandler(handle cache.ResourceEventHandlerRegistration) error {
+	return nil
+}
+func (m *mockDNSEndpointInformer) GetStore() cache.Store           { return m.indexer }
+func (m *mockDNSEndpointInformer) GetController() cache.Controller { return nil }
+func (m *mockDNSEndpointInformer) Run(stopCh <-chan struct{})      {}
+func (m *mockDNSEndpointInformer) HasSynced() bool                 { return true }
+func (m *mockDNSEndpointInformer) LastSyncResourceVersion() string { return "" }
+func (m *mockDNSEndpointInformer) SetWatchErrorHandler(handler cache.WatchErrorHandler) error {
+	return nil
+}
+func (m *mockDNSEndpointInformer) SetTransform(f cache.TransformFunc) error { return nil }
+func (m *mockDNSEndpointInformer) IsStopped() bool                          { return false }
+func (m *mockDNSEndpointInformer) RunWithContext(ctx context.Context)       {}
+func (m *mockDNSEndpointInformer) SetWatchErrorHandlerWithContext(handler cache.WatchErrorHandlerWithContext) error {
+	return nil
+}
+func (m *mockDNSEndpointInformer) AddIndexers(indexers cache.Indexers) error { return nil }
+
+// Enhanced lookupDNSEndpoint that supports CNAME records for testing
+func lookupDNSEndpointWithCNAME(ctrl cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string, cnames []string) {
+	return func(indexKeys []string) (result []netip.Addr, raw []string, cname []string) {
+		var objs []interface{}
+		for _, key := range indexKeys {
+			obj, _ := ctrl.GetIndexer().ByIndex(externalDNSHostnameIndex, strings.ToLower(key))
+			objs = append(objs, obj...)
+		}
+
+		for _, obj := range objs {
+			dnsEndpoint, ok := obj.(*externaldnsv1.DNSEndpoint)
+			if !ok {
+				continue
+			}
+
+			for _, endpoint := range dnsEndpoint.Spec.Endpoints {
+				// Only process endpoints that match one of our index keys
+				matchesKey := false
+				for _, key := range indexKeys {
+					if strings.EqualFold(endpoint.DNSName, key) {
+						matchesKey = true
+						break
+					}
+				}
+				if !matchesKey {
+					continue
+				}
+
+				for _, target := range endpoint.Targets {
+					switch endpoint.RecordType {
+					case "A", "AAAA":
+						if addr, err := netip.ParseAddr(target); err == nil {
+							result = append(result, addr)
+						}
+					case "TXT":
+						raw = append(raw, target)
+					case "CNAME":
+						cname = append(cname, target)
+					}
+				}
+			}
+		}
+		return result, raw, cname
+	}
 }

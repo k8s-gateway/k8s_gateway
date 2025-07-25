@@ -37,6 +37,7 @@ const (
 	tlsRouteHostnameIndex            = "tlsRouteHostname"
 	grpcRouteHostnameIndex           = "grpcRouteHostname"
 	externalDNSHostnameIndex         = "externalDNSHostname"
+	externalDNSCNAMEIndex            = "externalDNSCNAME"
 	hostnameAnnotationKey            = "coredns.io/hostname"
 	externalDnsHostnameAnnotationKey = "external-dns.alpha.kubernetes.io/hostname"
 	externalDNSEndpointGroup         = "externaldns.k8s.io/v1alpha1"
@@ -157,7 +158,10 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 				},
 				&externaldnsv1.DNSEndpoint{},
 				defaultResyncPeriod,
-				cache.Indexers{externalDNSHostnameIndex: dnsEndpointTargetIndexFunc},
+				cache.Indexers{
+					externalDNSHostnameIndex: dnsEndpointTargetIndexFunc,
+					externalDNSCNAMEIndex:    dnsEndpointCNAMEIndexFunc,
+				},
 			)
 			resource.lookup = lookupDNSEndpoint(dnsEndpointController)
 			ctrl.controllers = append(ctrl.controllers, dnsEndpointController)
@@ -253,32 +257,33 @@ func (ctrl *KubeController) HasSynced() bool {
 func (gw *Gateway) RunKubeController(ctx context.Context) error {
 	config, err := gw.getClientConfig()
 	if err != nil {
-		return err
+		return WrapPluginError("failed to get client config", err)
 	}
 
 	kubeClient, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return err
+		return WrapPluginError("failed to create Kubernetes client", err)
 	}
 
 	apiextensionsClient, err = apiextensionsclientset.NewForConfig(config)
 	if err != nil {
-		return err
+		return WrapPluginError("failed to create API extensions client", err)
 	}
 
 	gwAPIClient, err := gatewayClient.NewForConfig(config)
 	if err != nil {
-		return err
+		return WrapPluginError("failed to create Gateway API client", err)
 	}
 
 	externaldnsCRDClient, _, err = source.NewCRDClientForAPIVersionKind(kubeClient, gw.configFile, "", externalDNSEndpointGroup, externalDNSEndpointKind)
 	if err != nil {
-		log.Warningf("crd %s not found. ignoring and continuing execution", externalDNSEndpointGroup)
+		LogAndContinue("ExternalDNS CRD client creation failed, continuing without ExternalDNS support", err)
 	}
 
 	gw.Controller = newKubeController(ctx, kubeClient, gwAPIClient, gw)
 	go gw.Controller.run()
 
+	log.Infof("Kubernetes controllers started successfully")
 	return nil
 }
 
@@ -562,6 +567,28 @@ func dnsEndpointTargetIndexFunc(obj interface{}) ([]string, error) {
 	return hostnames, nil
 }
 
+// dnsEndpointCNAMEIndexFunc creates an index specifically for CNAME records
+func dnsEndpointCNAMEIndexFunc(obj interface{}) ([]string, error) {
+	dnsEndpoint, ok := obj.(*externaldnsv1.DNSEndpoint)
+	if !ok {
+		return []string{}, nil
+	}
+
+	// Check if object should be ignored
+	if checkIgnoreLabel(dnsEndpoint.Labels) {
+		return []string{}, nil
+	}
+
+	var cnameNames []string
+	for _, endpoint := range dnsEndpoint.Spec.Endpoints {
+		if endpoint.RecordType == "CNAME" {
+			log.Debugf("Adding CNAME index %s for DNSEndpoint %s", endpoint.DNSName, dnsEndpoint.Name)
+			cnameNames = append(cnameNames, endpoint.DNSName)
+		}
+	}
+	return cnameNames, nil
+}
+
 func checkServiceAnnotation(annotation string, service *core.Service) (string, bool) {
 	if annotationValue, exists := service.Annotations[annotation]; exists {
 		return strings.ToLower(annotationValue), true
@@ -583,8 +610,8 @@ func checkDomainValid(domain string) bool {
 	return false
 }
 
-func lookupServiceIndex(ctrl cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string) {
-	return func(indexKeys []string) (result []netip.Addr, raw []string) {
+func lookupServiceIndex(ctrl cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string, cnames []string) {
+	return func(indexKeys []string) (result []netip.Addr, raw []string, cnames []string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := ctrl.GetIndexer().ByIndex(serviceHostnameIndex, strings.ToLower(key))
@@ -608,8 +635,8 @@ func lookupServiceIndex(ctrl cache.SharedIndexInformer) func([]string) (results 
 	}
 }
 
-func lookupHttpRouteIndex(http, gw cache.SharedIndexInformer, gwclasses []string) func([]string) (results []netip.Addr, raws []string) {
-	return func(indexKeys []string) (result []netip.Addr, raw []string) {
+func lookupHttpRouteIndex(http, gw cache.SharedIndexInformer, gwclasses []string) func([]string) (results []netip.Addr, raws []string, cnames []string) {
+	return func(indexKeys []string) (result []netip.Addr, raw []string, cnames []string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := http.GetIndexer().ByIndex(httpRouteHostnameIndex, strings.ToLower(key))
@@ -625,8 +652,8 @@ func lookupHttpRouteIndex(http, gw cache.SharedIndexInformer, gwclasses []string
 	}
 }
 
-func lookupTLSRouteIndex(tls, gw cache.SharedIndexInformer, gwclasses []string) func([]string) (results []netip.Addr, raws []string) {
-	return func(indexKeys []string) (result []netip.Addr, raw []string) {
+func lookupTLSRouteIndex(tls, gw cache.SharedIndexInformer, gwclasses []string) func([]string) (results []netip.Addr, raws []string, cnames []string) {
+	return func(indexKeys []string) (result []netip.Addr, raw []string, cnames []string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := tls.GetIndexer().ByIndex(tlsRouteHostnameIndex, strings.ToLower(key))
@@ -642,8 +669,8 @@ func lookupTLSRouteIndex(tls, gw cache.SharedIndexInformer, gwclasses []string) 
 	}
 }
 
-func lookupGRPCRouteIndex(grpc, gw cache.SharedIndexInformer, gwclasses []string) func([]string) (results []netip.Addr, raws []string) {
-	return func(indexKeys []string) (result []netip.Addr, raw []string) {
+func lookupGRPCRouteIndex(grpc, gw cache.SharedIndexInformer, gwclasses []string) func([]string) (results []netip.Addr, raws []string, cnames []string) {
+	return func(indexKeys []string) (result []netip.Addr, raw []string, cnames []string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := grpc.GetIndexer().ByIndex(grpcRouteHostnameIndex, strings.ToLower(key))
@@ -684,8 +711,8 @@ func lookupGateways(gw cache.SharedIndexInformer, refs []gatewayapi_v1.ParentRef
 	return
 }
 
-func lookupIngressIndex(ctrl cache.SharedIndexInformer, ingclasses []string) func([]string) (results []netip.Addr, raws []string) {
-	return func(indexKeys []string) (result []netip.Addr, raw []string) {
+func lookupIngressIndex(ctrl cache.SharedIndexInformer, ingclasses []string) func([]string) (results []netip.Addr, raws []string, cnames []string) {
+	return func(indexKeys []string) (result []netip.Addr, raw []string, cnames []string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := ctrl.GetIndexer().ByIndex(ingressHostnameIndex, strings.ToLower(key))
@@ -707,8 +734,8 @@ func lookupIngressIndex(ctrl cache.SharedIndexInformer, ingclasses []string) fun
 	}
 }
 
-func lookupDNSEndpoint(ctrl cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string) {
-	return func(indexKeys []string) (result []netip.Addr, raw []string) {
+func lookupDNSEndpoint(ctrl cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string, cnames []string) {
+	return func(indexKeys []string) (result []netip.Addr, raw []string, cnames []string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
 			obj, _ := ctrl.GetIndexer().ByIndex(externalDNSHostnameIndex, strings.ToLower(key))
@@ -719,32 +746,44 @@ func lookupDNSEndpoint(ctrl cache.SharedIndexInformer) func([]string) (results [
 			dnsEndpoint, _ := obj.(*externaldnsv1.DNSEndpoint)
 
 			for _, endpoint := range dnsEndpoint.Spec.Endpoints {
-				for _, target := range endpoint.Targets {
-					if endpoint.RecordType == "A" || endpoint.RecordType == "AAAA" {
-						addr, err := netip.ParseAddr(target)
-						if err != nil {
-							continue
-						}
-						result = append(result, addr)
+				// Only process endpoints that match one of our index keys (using canonical comparison)
+				matchesKey := false
+				canonicalEndpointName := strings.ToLower(strings.TrimSuffix(endpoint.DNSName, "."))
+				for _, key := range indexKeys {
+					canonicalKey := strings.ToLower(strings.TrimSuffix(key, "."))
+					if canonicalEndpointName == canonicalKey {
+						matchesKey = true
+						break
 					}
-					if endpoint.RecordType == "TXT" {
+				}
+				if !matchesKey {
+					continue
+				}
+
+				for _, target := range endpoint.Targets {
+					switch endpoint.RecordType {
+					case "A", "AAAA":
+						if addr, valid := ParseIPSafely(target, fmt.Sprintf("DNSEndpoint %s", dnsEndpoint.Name)); valid {
+							result = append(result, addr)
+						}
+					case "TXT":
 						raw = append(raw, target)
+					case "CNAME":
+						cnames = append(cnames, target)
 					}
 				}
 			}
 		}
-		return result, raw
+		return result, raw, cnames
 	}
 }
 
 func fetchGatewayIPs(gw *gatewayapi_v1.Gateway) (results []netip.Addr) {
 	for _, addr := range gw.Status.Addresses {
 		if *addr.Type == gatewayapi_v1.IPAddressType {
-			addr, err := netip.ParseAddr(addr.Value)
-			if err != nil {
-				continue
+			if parsedAddr, valid := ParseIPSafely(addr.Value, "Gateway status address"); valid {
+				results = append(results, parsedAddr)
 			}
-			results = append(results, addr)
 			continue
 		}
 

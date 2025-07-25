@@ -14,19 +14,29 @@ import (
 
 func setupEmptyLookupFuncs(gw *Gateway) {
 	if resource := gw.lookupResource("HTTPRoute"); resource != nil {
-		resource.lookup = func(_ []string) (results []netip.Addr, raws []string) { return []netip.Addr{}, []string{} }
+		resource.lookup = func(_ []string) (results []netip.Addr, raws []string, cnames []string) {
+			return []netip.Addr{}, []string{}, []string{}
+		}
 	}
 	if resource := gw.lookupResource("TLSRoute"); resource != nil {
-		resource.lookup = func(_ []string) (results []netip.Addr, raws []string) { return []netip.Addr{}, []string{} }
+		resource.lookup = func(_ []string) (results []netip.Addr, raws []string, cnames []string) {
+			return []netip.Addr{}, []string{}, []string{}
+		}
 	}
 	if resource := gw.lookupResource("GRPCRoute"); resource != nil {
-		resource.lookup = func(_ []string) (results []netip.Addr, raws []string) { return []netip.Addr{}, []string{} }
+		resource.lookup = func(_ []string) (results []netip.Addr, raws []string, cnames []string) {
+			return []netip.Addr{}, []string{}, []string{}
+		}
 	}
 	if resource := gw.lookupResource("Ingress"); resource != nil {
-		resource.lookup = func(_ []string) (results []netip.Addr, raws []string) { return []netip.Addr{}, []string{} }
+		resource.lookup = func(_ []string) (results []netip.Addr, raws []string, cnames []string) {
+			return []netip.Addr{}, []string{}, []string{}
+		}
 	}
 	if resource := gw.lookupResource("Service"); resource != nil {
-		resource.lookup = func(_ []string) (results []netip.Addr, raws []string) { return []netip.Addr{}, []string{} }
+		resource.lookup = func(_ []string) (results []netip.Addr, raws []string, cnames []string) {
+			return []netip.Addr{}, []string{}, []string{}
+		}
 	}
 }
 

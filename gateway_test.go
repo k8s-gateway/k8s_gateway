@@ -291,11 +291,11 @@ var testServiceIndexes = map[string][]netip.Addr{
 	"dns1.kube-system": {netip.MustParseAddr("192.0.1.53")},
 }
 
-func testServiceLookup(keys []string) (results []netip.Addr, raws []string) {
+func testServiceLookup(keys []string) (results []netip.Addr, raws []string, cnames []string) {
 	for _, key := range keys {
 		results = append(results, testServiceIndexes[strings.ToLower(key)]...)
 	}
-	return results, raws
+	return results, raws, cnames
 }
 
 var testIngressIndexes = map[string][]netip.Addr{
@@ -308,11 +308,11 @@ var testIngressIndexes = map[string][]netip.Addr{
 	"specific-subdomain.wildcard.example.com": {netip.MustParseAddr("192.0.0.7")},
 }
 
-func testIngressLookup(keys []string) (results []netip.Addr, raws []string) {
+func testIngressLookup(keys []string) (results []netip.Addr, raws []string, cnames []string) {
 	for _, key := range keys {
 		results = append(results, testIngressIndexes[strings.ToLower(key)]...)
 	}
-	return results, raws
+	return results, raws, cnames
 }
 
 var testRouteIndexes = map[string][]netip.Addr{
@@ -320,16 +320,17 @@ var testRouteIndexes = map[string][]netip.Addr{
 	"shadow.example.com":    {netip.MustParseAddr("192.0.2.4")},
 }
 
-func testRouteLookup(keys []string) (results []netip.Addr, raws []string) {
+func testRouteLookup(keys []string) (results []netip.Addr, raws []string, cnames []string) {
 	for _, key := range keys {
 		results = append(results, testRouteIndexes[strings.ToLower(key)]...)
 	}
-	return results, raws
+	return results, raws, cnames
 }
 
 var testDNSEndpointIndexes = map[string][]netip.Addr{
 	"domain.endpoint.example.com": {netip.MustParseAddr("192.0.4.1")},
 	"endpoint.example.com":        {netip.MustParseAddr("192.0.4.4")},
+	"service.example.com":         {netip.MustParseAddr("10.0.0.1")},
 }
 
 // test implementation for TXT multiple records does not work correctly
@@ -337,17 +338,26 @@ var testDNSEndpointIndexes = map[string][]netip.Addr{
 // The loop in https://github.com/coredns/coredns/blob/master/plugin/test/helpers.go#L209
 // may be the origin of the problem
 var testDNSEndpointTxtIndexes = map[string][]string{
-	"endpoint.example.com":        {"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."},
+	"endpoint.example.com": {"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."},
 }
 
-func testDNSEndpointLookup(keys []string) (results []netip.Addr, raws []string) {
+var testDNSEndpointCnameIndexes = map[string][]string{
+	"cname.example.com": {"target.example.com"},
+	"alias.example.com": {"service.example.com"},
+	"www.example.com":   {"web.example.com"},
+}
+
+func testDNSEndpointLookup(keys []string) (results []netip.Addr, raws []string, cnames []string) {
 	for _, key := range keys {
 		results = append(results, testDNSEndpointIndexes[strings.ToLower(key)]...)
 	}
 	for _, key := range keys {
 		raws = append(raws, testDNSEndpointTxtIndexes[strings.ToLower(key)]...)
 	}
-	return results, raws
+	for _, key := range keys {
+		cnames = append(cnames, testDNSEndpointCnameIndexes[strings.ToLower(key)]...)
+	}
+	return results, raws, cnames
 }
 
 func setupLookupFuncs(gw *Gateway) {
@@ -369,4 +379,164 @@ func setupLookupFuncs(gw *Gateway) {
 	if resource := gw.lookupResource("DNSEndpoint"); resource != nil {
 		resource.lookup = testDNSEndpointLookup
 	}
+}
+
+// TestCNAMEResponse tests CNAME DNS responses
+func TestCNAMEResponse(t *testing.T) {
+	ctrl := &KubeController{hasSynced: true}
+	gw := newGateway()
+	gw.Zones = []string{"example.com."}
+	gw.Next = test.NextHandler(dns.RcodeSuccess, nil)
+	gw.ExternalAddrFunc = gw.SelfAddress
+	gw.Controller = ctrl
+	setupCNAMELookupFuncs(gw)
+
+	testCases := []struct {
+		name        string
+		qname       string
+		qtype       uint16
+		expectRcode int
+		expectCNAME bool
+		expectA     bool
+		answerCount int
+	}{
+		{
+			name:        "CNAME query returns CNAME record",
+			qname:       "cname.example.com.",
+			qtype:       dns.TypeCNAME,
+			expectRcode: dns.RcodeSuccess,
+			expectCNAME: true,
+			expectA:     false,
+			answerCount: 1,
+		},
+		{
+			name:        "A query with CNAME follows chain",
+			qname:       "alias.example.com.",
+			qtype:       dns.TypeA,
+			expectRcode: dns.RcodeSuccess,
+			expectCNAME: true,
+			expectA:     true,
+			answerCount: 2, // CNAME + A record
+		},
+		{
+			name:        "Non-existent CNAME returns NXDOMAIN",
+			qname:       "nonexistent.example.com.",
+			qtype:       dns.TypeCNAME,
+			expectRcode: dns.RcodeNameError,
+			expectCNAME: false,
+			expectA:     false,
+			answerCount: 0,
+		},
+	}
+
+	ctx := context.TODO()
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := new(dns.Msg)
+			req.SetQuestion(tc.qname, tc.qtype)
+
+			w := dnstest.NewRecorder(&test.ResponseWriter{})
+			code, err := gw.ServeDNS(ctx, w, req)
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+
+			if code != tc.expectRcode {
+				t.Errorf("Expected rcode %d, got %d", tc.expectRcode, code)
+			}
+
+			resp := w.Msg
+			if resp == nil {
+				t.Fatal("Got nil response")
+			}
+
+			hasCNAME := false
+			hasA := false
+			for _, answer := range resp.Answer {
+				switch answer.Header().Rrtype {
+				case dns.TypeCNAME:
+					hasCNAME = true
+				case dns.TypeA:
+					hasA = true
+				}
+			}
+
+			if tc.expectCNAME && !hasCNAME {
+				t.Error("Expected CNAME record in response")
+			}
+
+			if tc.expectA && !hasA {
+				t.Error("Expected A record in response")
+			}
+
+			if len(resp.Answer) != tc.answerCount {
+				t.Errorf("Expected %d answer records, got %d", tc.answerCount, len(resp.Answer))
+			}
+		})
+	}
+}
+
+// TestCNAMEChainResolution tests CNAME chain resolution logic
+func TestCNAMEChainResolution(t *testing.T) {
+	gw := newGateway()
+	gw.Zones = []string{"example.com."}
+	setupCNAMELookupFuncs(gw)
+
+	tests := []struct {
+		name         string
+		cname        string
+		zone         string
+		maxDepth     int
+		expectError  bool
+		expectedAddr int
+	}{
+		{
+			name:         "Valid CNAME resolution",
+			cname:        "alias.example.com",
+			zone:         "example.com.",
+			maxDepth:     10,
+			expectError:  false,
+			expectedAddr: 1, // Should resolve to service.example.com -> IP
+		},
+		{
+			name:         "CNAME depth limit reached",
+			cname:        "deep.example.com",
+			zone:         "example.com.",
+			maxDepth:     0,
+			expectError:  true,
+			expectedAddr: 0,
+		},
+		{
+			name:         "External CNAME target",
+			cname:        "external.otherdomain.com",
+			zone:         "example.com.",
+			maxDepth:     10,
+			expectError:  false,
+			expectedAddr: 0, // External resolution in test will fail
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			addrs, err := gw.resolveCNAMEChain(test.cname, test.zone, test.maxDepth)
+
+			if test.expectError && err == nil {
+				t.Error("Expected error but got none")
+			}
+
+			if !test.expectError && err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+
+			if len(addrs) != test.expectedAddr {
+				t.Errorf("Expected %d addresses, got %d", test.expectedAddr, len(addrs))
+			}
+		})
+	}
+}
+
+// Setup function for CNAME tests
+func setupCNAMELookupFuncs(gw *Gateway) {
+	setupLookupFuncs(gw)
 }
