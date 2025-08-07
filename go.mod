@@ -7,7 +7,7 @@ toolchain go1.24.6
 require (
 	github.com/coredns/caddy v1.1.2-0.20241029205200-8de985351a98
 	github.com/coredns/coredns v1.12.2
-	github.com/miekg/dns v1.1.66
+	github.com/miekg/dns v1.1.68
 	k8s.io/api v0.33.3
 	k8s.io/apiextensions-apiserver v0.33.3
 	k8s.io/apimachinery v0.33.3
