@@ -125,3 +125,15 @@ zoneFiles: []
 #        example.com.   IN NS  a.iana-servers.net.
 #        example.com.   IN A   192.168.99.102
 #        *.example.com. IN A   192.168.99.102
+
+extraVolumes: []
+# extraVolumes:
+#   - name: tsig-secret
+#     secret:
+#       secretName: tsig-secret
+extraVolumeMounts: []
+# extraVolumeMounts:
+#   - name: tsig-volume
+#     mountPath: /etc/tsig
+#     subPath: tsig.key
+#     readOnly: true

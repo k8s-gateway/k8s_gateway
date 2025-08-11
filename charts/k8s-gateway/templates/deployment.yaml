@@ -37,6 +37,9 @@ spec:
         volumeMounts:
         - name: config-volume
           mountPath: /etc/coredns
+        {{- if .Values.extraVolumeMounts }}
+        {{- toYaml .Values.extraVolumeMounts | nindent 8 }}
+        {{- end }}
         resources:
           {{- toYaml .Values.resources | nindent 12 }}
         ports:
@@ -84,6 +87,9 @@ spec:
             - key: {{ .filename }}
               path: {{ .filename }}
             {{- end }}
+        {{- if .Values.extraVolumes }}
+        {{- toYaml .Values.extraVolumes | nindent 8 }}
+        {{- end }}
       securityContext:
         {{- .Values.podSecurityContext | toYaml | nindent 8 }}
       {{- with .Values.nodeSelector }}

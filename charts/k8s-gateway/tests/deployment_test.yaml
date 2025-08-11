@@ -53,3 +53,43 @@ tests:
           path: spec.template.spec.imagePullSecrets
           value:
             - name: my-image-credential
+  - it: Should add extraVolumes if specified
+    set:
+      domain: example.com
+      extraVolumes:
+        - name: extra-volume
+          configMap:
+            name: extra-config
+      image:
+        registry: docker.io
+        repository: coredns/coredns
+        tag: 1.8.6
+      watchedResources:
+        - Service
+    template: templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: extra-volume
+            configMap:
+              name: extra-config
+  - it: Should add extraVolumeMounts if specified
+    set:
+      domain: example.com
+      extraVolumeMounts:
+        - name: extra-volume
+          mountPath: /etc/extra
+      image:
+        registry: docker.io
+        repository: coredns/coredns
+        tag: 1.8.6
+      watchedResources:
+        - Service
+    template: templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: extra-volume
+            mountPath: /etc/extra
