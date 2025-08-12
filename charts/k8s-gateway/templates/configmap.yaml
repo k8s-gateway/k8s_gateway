@@ -45,7 +45,14 @@ data:
         }{{ end }}
         {{- end }}
         {{- range .Values.zoneFiles }}
-        file /etc/coredns/{{ .filename }}{{ if .domains }} {{ .domains }}{{ end }}
+        file /etc/coredns/{{ .filename }}{{ if .domains }} {{ .domains }}{{ end }} {
+        {{- if .fallthrough.enabled }}
+          fallthrough{{ range .fallthrough.zones }} {{ . }}{{ end }}
+        {{- end }}
+        {{- if .reload }}
+          reload {{ .reload | quote }}
+        {{- end }}
+        }
         {{- end }}
       }
   {{- range .Values.zoneFiles }}
