@@ -115,10 +115,16 @@ podSecurityContext: {}
 
 securityContext: {}
 
+# file plugin
 zoneFiles: []
 #    - filename: example.db
 #      # Optional
 #      domains: example.com
+#      fallthrough:
+#       enabled: true
+#       zones:
+#         - test.example.com
+#      reload: 1m
 #      contents: |
 #        example.com.   IN SOA sns.dns.icann.com. noc.dns.icann.com. 2015082541 7200 3600 1209600 3600
 #        example.com.   IN NS  b.iana-servers.net.
