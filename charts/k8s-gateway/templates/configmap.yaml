@@ -46,11 +46,11 @@ data:
         {{- end }}
         {{- range .Values.zoneFiles }}
         file /etc/coredns/{{ .filename }}{{ if .domains }} {{ .domains }}{{ end }} {
-        {{- if .fallthrough.enabled }}
+        {{- if and .fallthrough .fallthrough.enabled }}
           fallthrough{{ range .fallthrough.zones }} {{ . }}{{ end }}
         {{- end }}
         {{- if .reload }}
-          reload {{ .reload | quote }}
+          reload {{ .reload }}
         {{- end }}
         }
         {{- end }}

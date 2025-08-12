@@ -43,3 +43,131 @@ tests:
       - matchRegex:
           path: data.Corefile
           pattern: "resources Service Ingress"
+  - it: Should render ConfigMap with fallthrough if set
+    set:
+      domain: "example.com"
+      watchedResources:
+        - Service
+      zoneFiles:
+        - domains: example.com.
+          zoneName: example.com.
+          filename: example.com.db
+          fallthrough:
+            enabled: true
+            zones:
+              - test.example.com
+    template: templates/configmap.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: data.Corefile
+          value: |-
+            .:1053 {
+                k8s_gateway example.com {
+                  apex RELEASE-NAME-k8s-gateway.NAMESPACE
+                  ttl 300
+                  resources Service
+                }
+                log
+                errors
+                health {
+                  lameduck 5s
+                }
+                ready
+                prometheus 0.0.0.0:9153
+                forward . /etc/resolv.conf
+                loop
+                reload
+                loadbalance
+                file /etc/coredns/example.com.db example.com. {
+                  fallthrough test.example.com
+                }
+              }
+      - matchRegex:
+          path: data.Corefile
+          pattern: "fallthrough test\\.example\\.com"
+  - it: Should not render ConfigMap with fallthrough if disabled
+    set:
+      domain: "example.com"
+      watchedResources:
+        - Service
+      zoneFiles:
+        - domains: example.com.
+          zoneName: example.com.
+          filename: example.com.db
+          fallthrough:
+            enabled: false
+            zones:
+              - test.example.com
+    template: templates/configmap.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: data.Corefile
+          value: |-
+            .:1053 {
+                k8s_gateway example.com {
+                  apex RELEASE-NAME-k8s-gateway.NAMESPACE
+                  ttl 300
+                  resources Service
+                }
+                log
+                errors
+                health {
+                  lameduck 5s
+                }
+                ready
+                prometheus 0.0.0.0:9153
+                forward . /etc/resolv.conf
+                loop
+                reload
+                loadbalance
+                file /etc/coredns/example.com.db example.com. {
+                }
+              }
+      - notMatchRegex:
+          path: data.Corefile
+          pattern: "fallthrough test\\.example\\.com"
+  - it: Should render ConfigMap with reload if set
+    set:
+      domain: "example.com"
+      watchedResources:
+        - Service
+      zoneFiles:
+        - domains: example.com.
+          zoneName: example.com.
+          filename: example.com.db
+          reload: 1m
+    template: templates/configmap.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: data.Corefile
+          value: |-
+            .:1053 {
+                k8s_gateway example.com {
+                  apex RELEASE-NAME-k8s-gateway.NAMESPACE
+                  ttl 300
+                  resources Service
+                }
+                log
+                errors
+                health {
+                  lameduck 5s
+                }
+                ready
+                prometheus 0.0.0.0:9153
+                forward . /etc/resolv.conf
+                loop
+                reload
+                loadbalance
+                file /etc/coredns/example.com.db example.com. {
+                  reload 1m
+                }
+              }
+      - matchRegex:
+          path: data.Corefile
+          pattern: "reload 1m"
