@@ -41,3 +41,5 @@ The following table lists the configurable parameters of the k8s_gateway chart a
 | `service.useTcp`                 | set this parameter to optionally expose the port on tcp as well as udp for the DNS protocol  | `false`            |
 | `replicaCount`                   | Number of replicas                                                                        | `1`                   |
 | `zoneFiles`                      | Inject few custom zone files                                                              | `[]`                  |
+| `extraVolumes`    | 	Add additional volumes to the workload (e.g., secrets) | `[]` |
+| `extraVolumeMounts`   | Define extra volume mounts for the workload containers (e.g., secrets) | `[]` |
