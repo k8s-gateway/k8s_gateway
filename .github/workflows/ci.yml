@@ -20,7 +20,7 @@ jobs:
         with:
           go-version: stable
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
@@ -33,5 +33,5 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: make test
