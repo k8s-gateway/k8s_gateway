@@ -453,9 +453,28 @@ var testServices = map[string]*core.Service{
 			},
 		},
 	},
-	"annotation-external-dns": {
+	"annotation-list1, annotation-list2": {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "svc5",
+			Namespace: "ns1",
+			Annotations: map[string]string{
+				"coredns.io/hostname": "annotation-list1, annotation-list2",
+			},
+		},
+		Spec: core.ServiceSpec{
+			Type: core.ServiceTypeLoadBalancer,
+		},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{
+					{IP: "192.0.0.3"},
+				},
+			},
+		},
+	},
+	"annotation-external-dns": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc6",
 			Namespace: "ns1",
 			Annotations: map[string]string{
 				"external-dns.alpha.kubernetes.io/hostname": "annotation-external-dns",
@@ -474,7 +493,7 @@ var testServices = map[string]*core.Service{
 	},
 	"annotation-external-dns-list1,annotation-external-dns-list2": {
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc6",
+			Name:      "svc7",
 			Namespace: "ns1",
 			Annotations: map[string]string{
 				"external-dns.alpha.kubernetes.io/hostname": "annotation-external-dns-list1,annotation-external-dns-list2",
