@@ -573,7 +573,7 @@ func checkServiceAnnotation(annotation string, service *core.Service) (string, b
 func checkDomainValid(domain string) bool {
 	if _, ok := dns.IsDomainName(domain); ok {
 		// checking RFC 1123 conformance (same as metadata labels)
-		if valid := isdns1123Hostname(domain); valid {
+		if valid := isdns1123Hostname(strings.TrimPrefix(domain, "*.")); valid {
 			return true
 		}
 		log.Infof("RFC 1123 conformance failed for FQDN: %s", domain)
