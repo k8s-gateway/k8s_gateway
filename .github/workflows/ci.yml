@@ -49,13 +49,10 @@ jobs:
         run: go mod download
       - name: Run tests
         run: make test
-      - name: Run tests with race detection
-        run: go test -race ./... -short
       - name: Run tests with coverage
         run: go test -race -coverprofile=coverage.out ./...
       - name: Upload coverage reports
         uses: codecov/codecov-action@v5
         with:
-          file: ./coverage.out
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
