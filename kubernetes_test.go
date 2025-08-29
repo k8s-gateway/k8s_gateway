@@ -174,6 +174,13 @@ func TestController(t *testing.T) {
 		}
 	}
 
+	for _, testObj := range testInvalidAnnotationServices {
+		found, _ := serviceHostnameIndexFunc(testObj)
+		if len(found) != 0 {
+			t.Errorf("Unexpected non-empty service hostnames %v for invalid annotation: %v", found, testObj.Annotations)
+		}
+	}
+
 	for index, testObj := range testHTTPRoutes {
 		found, _ := httpRouteHostnameIndexFunc(testObj)
 		if checkIgnoreLabel(testObj.Labels) {
@@ -434,9 +441,47 @@ var testServices = map[string]*core.Service{
 			},
 		},
 	},
+	"*.annotation-wildcard": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc4",
+			Namespace: "ns1",
+			Annotations: map[string]string{
+				"coredns.io/hostname": "*.annotation-wildcard",
+			},
+		},
+		Spec: core.ServiceSpec{
+			Type: core.ServiceTypeLoadBalancer,
+		},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{
+					{IP: "192.0.0.3"},
+				},
+			},
+		},
+	},
+	"annotation-list1, annotation-list2": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc5",
+			Namespace: "ns1",
+			Annotations: map[string]string{
+				"coredns.io/hostname": "annotation-list1, annotation-list2",
+			},
+		},
+		Spec: core.ServiceSpec{
+			Type: core.ServiceTypeLoadBalancer,
+		},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{
+					{IP: "192.0.0.3"},
+				},
+			},
+		},
+	},
 	"annotation-external-dns": {
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc3",
+			Name:      "svc6",
 			Namespace: "ns1",
 			Annotations: map[string]string{
 				"external-dns.alpha.kubernetes.io/hostname": "annotation-external-dns",
@@ -455,7 +500,7 @@ var testServices = map[string]*core.Service{
 	},
 	"annotation-external-dns-list1,annotation-external-dns-list2": {
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc3",
+			Name:      "svc7",
 			Namespace: "ns1",
 			Annotations: map[string]string{
 				"external-dns.alpha.kubernetes.io/hostname": "annotation-external-dns-list1,annotation-external-dns-list2",
@@ -616,6 +661,66 @@ var testBadServices = map[string]*core.Service{
 		},
 		Spec: core.ServiceSpec{
 			Type: core.ServiceTypeClusterIP,
+		},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{
+					{IP: "192.0.0.1"},
+				},
+			},
+		},
+	},
+}
+
+var testInvalidAnnotationServices = []*core.Service{
+	{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc1",
+			Namespace: "ns3",
+			Annotations: map[string]string{
+				"coredns.io/hostname": "*my.host",
+			},
+		},
+		Spec: core.ServiceSpec{
+			Type: core.ServiceTypeLoadBalancer,
+		},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{
+					{IP: "192.0.0.1"},
+				},
+			},
+		},
+	},
+	{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc2",
+			Namespace: "ns3",
+			Annotations: map[string]string{
+				"coredns.io/hostname": "**my.host",
+			},
+		},
+		Spec: core.ServiceSpec{
+			Type: core.ServiceTypeLoadBalancer,
+		},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{
+					{IP: "192.0.0.1"},
+				},
+			},
+		},
+	},
+	{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc3",
+			Namespace: "ns3",
+			Annotations: map[string]string{
+				"external-dns.alpha.kubernetes.io/hostname": "my.*.host",
+			},
+		},
+		Spec: core.ServiceSpec{
+			Type: core.ServiceTypeLoadBalancer,
 		},
 		Status: core.ServiceStatus{
 			LoadBalancer: core.LoadBalancerStatus{
