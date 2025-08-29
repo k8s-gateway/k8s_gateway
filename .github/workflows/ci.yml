@@ -21,6 +21,8 @@ jobs:
           go-version: stable
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
@@ -34,4 +36,25 @@ jobs:
         with:
           go-version: stable
       - uses: actions/checkout@v5
-      - run: make test
+        with:
+          fetch-depth: 0
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Download dependencies
+        run: go mod download
+      - name: Run tests
+        run: make test
+      - name: Run tests with race detection
+        run: go test -race ./... -short
+      - name: Run tests with coverage
+        run: go test -race -coverprofile=coverage.out ./...
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.out
+          fail_ci_if_error: false
