@@ -2,12 +2,12 @@ apiVersion: v2
 name: k8s-gateway
 description: A Helm chart for the k8s_gateway CoreDNS plugin
 type: application
-version: 3.2.6
-appVersion: 1.5.2
+version: 3.2.7
+appVersion: 1.6.0
 maintainers:
   - url: https://github.com/samip5
     name: samip5
 annotations:
   artifacthub.io/changes: |
     - kind: changed
-      description: add fallthrough and reload parameters to zone file plugin
+      description: update to newer app version
