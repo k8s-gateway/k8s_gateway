@@ -57,7 +57,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Kubernetes tools
-        uses: yokawasa/action-setup-kube-tools@v0.11.3
+        uses: yokawasa/action-setup-kube-tools@v0.12.0
         with:
           setup-tools: |
             helmv3
