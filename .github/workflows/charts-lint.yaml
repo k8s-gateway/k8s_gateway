@@ -50,7 +50,7 @@ jobs:
           chart: "${{ matrix.chart }}"
 
       - name: Install Kubernetes tools
-        uses: yokawasa/action-setup-kube-tools@v0.13.0
+        uses: yokawasa/action-setup-kube-tools@v0.13.1
         with:
           setup-tools: |
             helmv3
