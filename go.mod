@@ -2,7 +2,7 @@ module github.com/k8s-gateway/k8s_gateway
 
 go 1.24.2
 
-toolchain go1.25.1
+toolchain go1.25.2
 
 require (
 	github.com/coredns/caddy v1.1.3
