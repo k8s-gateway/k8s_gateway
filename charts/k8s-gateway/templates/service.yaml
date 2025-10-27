@@ -20,6 +20,9 @@ spec:
   selector:
     {{- include "k8s-gateway.selectorLabels" . | nindent 6 }}
   type: {{ .Values.service.type }}
+  {{- if and .Values.service.loadBalancerClass (eq .Values.service.type "LoadBalancer") }}
+  loadBalancerClass: {{ .Values.service.loadBalancerClass }}
+  {{- end }}
   {{- if and .Values.service.loadBalancerIP (eq .Values.service.type "LoadBalancer") }}
   loadBalancerIP: {{ .Values.service.loadBalancerIP }}
   {{- end }}

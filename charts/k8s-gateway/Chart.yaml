@@ -2,7 +2,7 @@ apiVersion: v2
 name: k8s-gateway
 description: A Helm chart for the k8s_gateway CoreDNS plugin
 type: application
-version: 3.2.7
+version: 3.2.8
 appVersion: 1.6.0
 maintainers:
   - url: https://github.com/samip5
@@ -10,4 +10,4 @@ maintainers:
 annotations:
   artifacthub.io/changes: |
     - kind: changed
-      description: update to newer app version
+      description: allow setting loadBalancerClass on Service
