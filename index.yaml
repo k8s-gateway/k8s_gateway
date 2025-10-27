@@ -4,10 +4,27 @@ entries:
   - annotations:
       artifacthub.io/changes: |
         - kind: changed
+          description: allow setting loadBalancerClass on Service
+    apiVersion: v2
+    appVersion: 1.6.0
+    created: "2025-10-27T10:14:18.76027437Z"
+    description: A Helm chart for the k8s_gateway CoreDNS plugin
+    digest: dbc891ed25b7648c9127af27d5d9d4df25d0c245234b466e758e9b3cfe3146e7
+    maintainers:
+    - name: samip5
+      url: https://github.com/samip5
+    name: k8s-gateway
+    type: application
+    urls:
+    - https://k8s-gateway.github.io/k8s_gateway/k8s-gateway-3.2.8.tgz
+    version: 3.2.8
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: changed
           description: update to newer app version
     apiVersion: v2
     appVersion: 1.6.0
-    created: "2025-08-29T17:24:18.906984122Z"
+    created: "2025-10-27T10:14:18.759773894Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: e0bba7732048e66252badbd61d0933bbccd80e02aef53050002c284c4aa9d79b
     maintainers:
@@ -24,7 +41,7 @@ entries:
           description: add fallthrough and reload parameters to zone file plugin
     apiVersion: v2
     appVersion: 1.5.2
-    created: "2025-08-29T17:24:18.906366384Z"
+    created: "2025-10-27T10:14:18.759264272Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: 752fc03238b2703d1ae366afe862a86a5d3d2b08f8f5a5acb22a4e93d48bd31c
     maintainers:
@@ -41,7 +58,7 @@ entries:
           description: update docker image from 1.5.0 to 1.5.1
     apiVersion: v2
     appVersion: 1.5.1
-    created: "2025-08-29T17:24:18.905715985Z"
+    created: "2025-10-27T10:14:18.75866435Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: e971f8a086541d84739afab0c29c58a1b1b0de0d67528a72936ee933aca786ff
     maintainers:
@@ -58,7 +75,7 @@ entries:
           description: update docker image from 1.4.0 to 1.5.0
     apiVersion: v2
     appVersion: 1.5.0
-    created: "2025-08-29T17:24:18.904915015Z"
+    created: "2025-10-27T10:14:18.757503987Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: acc6f86ec81d522c0e47135ba75f13d42545f1cf5a46bbf0b5470f157b5a6d6c
     maintainers:
@@ -75,7 +92,7 @@ entries:
           description: docker image update
     apiVersion: v2
     appVersion: 1.4.0
-    created: "2025-08-29T17:24:18.903775867Z"
+    created: "2025-10-27T10:14:18.757031534Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: 5abeaf5e566e7702d4b375d08d82853c4f5235c36e82df2a53a8750c65c92d22
     maintainers:
@@ -92,7 +109,7 @@ entries:
           description: added ability to set image pull secrets
     apiVersion: v2
     appVersion: 1.2.0
-    created: "2025-08-29T17:24:18.903312887Z"
+    created: "2025-10-27T10:14:18.756534294Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: f2b131d58e8de0c3ec1b24ccbcc83e406448d69798e7a566d4ad9e8774a03813
     maintainers:
@@ -109,7 +126,7 @@ entries:
           description: Set default value for watchedResources to ["Ingress", "Service"]
     apiVersion: v2
     appVersion: 1.2.0
-    created: "2025-08-29T17:24:18.902813699Z"
+    created: "2025-10-27T10:14:18.756070437Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: d8c3063468befd5f1eec65890bfc35551e92074630c457acc3d6afc7d6e2d313
     maintainers:
@@ -126,7 +143,7 @@ entries:
           description: Updated app version
     apiVersion: v2
     appVersion: 1.2.0
-    created: "2025-08-29T17:24:18.902375033Z"
+    created: "2025-10-27T10:14:18.755600849Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: d8b90786871cd3ec42969af1a545164888fafc6575b50a5939cea86f45ee8ddf
     maintainers:
@@ -147,7 +164,7 @@ entries:
           description: fixed indentation issue in configmap.yaml
     apiVersion: v2
     appVersion: 1.1.1
-    created: "2025-08-29T17:24:18.901912313Z"
+    created: "2025-10-27T10:14:18.755135229Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: 3ff7546f5d22ac16b03cadf1c35ebc3f04243548e550c04e6282a039c314bd89
     maintainers:
@@ -160,7 +177,7 @@ entries:
     version: 3.1.2
   - apiVersion: v2
     appVersion: 1.1.1
-    created: "2025-08-29T17:24:18.901412213Z"
+    created: "2025-10-27T10:14:18.754569351Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: d59d768f911dcce1e3a54879ae655a2d1ca3a6d9671971abd1c778b44a3d075d
     maintainers:
@@ -173,7 +190,7 @@ entries:
     version: 3.1.1
   - apiVersion: v2
     appVersion: 1.0.3
-    created: "2025-08-29T17:24:18.900890683Z"
+    created: "2025-10-27T10:14:18.754143155Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: caae74a23ef6d9389c3620e5a9e2f0b00a64533278e7ca908f5ed1d8d48b4469
     maintainers:
@@ -186,7 +203,7 @@ entries:
     version: 3.1.0
   - apiVersion: v2
     appVersion: 1.0.3
-    created: "2025-08-29T17:24:18.900488195Z"
+    created: "2025-10-27T10:14:18.753717459Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: 35f69a932613049a0c4d56d9c7d2147dff54444ac0eac1a7335b827479e6a403
     maintainers:
@@ -199,7 +216,7 @@ entries:
     version: 3.0.2
   - apiVersion: v2
     appVersion: 1.0.1
-    created: "2025-08-29T17:24:18.900034972Z"
+    created: "2025-10-27T10:14:18.753301702Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: 3685eb04ffc01e3725d5660b7933a1f222fded3799e3fe7cbe8cba9035ab0955
     maintainers:
@@ -212,7 +229,7 @@ entries:
     version: 3.0.1
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2025-08-29T17:24:18.899489128Z"
+    created: "2025-10-27T10:14:18.752861429Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: 10020f32490ab07664fff4006cf48ab0bcb1df8ed101bd0c4a802099c9d171db
     maintainers:
@@ -223,4 +240,4 @@ entries:
     urls:
     - https://k8s-gateway.github.io/k8s_gateway/k8s-gateway-3.0.0.tgz
     version: 3.0.0
-generated: "2025-08-29T17:24:18.898841123Z"
+generated: "2025-10-27T10:14:18.752082803Z"
