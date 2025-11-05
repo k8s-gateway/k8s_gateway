@@ -53,7 +53,7 @@ jobs:
           python-version: "3.14"
 
       - name: Set up chart-testing
-        uses: helm/chart-testing-action@v2.7.0
+        uses: helm/chart-testing-action@v2.8.0
 
       - name: Debug
         run: |
