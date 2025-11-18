@@ -87,6 +87,34 @@ k8s_gateway example.com {
 }
 ```
 
+### Zone Transfers
+
+`k8s_gateway` supports zone transfers (AXFR) which allows for:
+- Secondary DNS backup servers
+- Running CoreDNS as a hidden primary
+
+The zone transfer functionality is automatically enabled and follows the DNS standard protocol. When a zone transfer is requested, `k8s_gateway` will:
+1. Send the SOA record
+2. Send NS records for the zone
+3. Send all A, AAAA, and TXT records for configured resources (Ingress, Service, HTTPRoute, TLSRoute, GRPCRoute, DNSEndpoint)
+4. Send the SOA record again to mark the end of the transfer
+
+Zone transfers respect all configured filters including `ingressClasses`, `gatewayClasses`, and the `k8s-gateway.dns/ignore` label.
+
+To enable zone transfers in your DNS server configuration, you may need to configure the `transfer` plugin. For example:
+
+```
+k8s_gateway example.com {
+    resources Ingress Service
+}
+
+transfer {
+    to * 192.0.2.1
+}
+```
+
+This allows zone transfers from IP address 192.0.2.1. See the [CoreDNS transfer plugin documentation](https://coredns.io/plugins/transfer/) for more options.
+
 ### Required Kubernetes permissions
 
 To monitor any of the resources `k8s_gateway` requires the following permissions in the cluster. If you installed using either the Helm chart of the `install-clusterwide.yml` manifest, a `ClusterRole`, `ClusterRoleBinding`, and `ServiceAccount` will have been added to allow monitoring `Ingress` and `Service` resources.
