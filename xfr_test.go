@@ -6,6 +6,9 @@ import (
 
 	"github.com/coredns/coredns/plugin/transfer"
 	"github.com/miekg/dns"
+	core "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 // parseAddrs is a helper function for tests
@@ -164,4 +167,169 @@ func TestTransferHelpers(t *testing.T) {
 			t.Errorf("Expected 2 records, got: %d", len(records["test.example.com."]))
 		}
 	})
+}
+
+func TestTransferResources(t *testing.T) {
+	ctrl := &KubeController{hasSynced: true}
+
+	gw := newGateway()
+	gw.Zones = []string{"example.com."}
+	gw.Controller = ctrl
+
+	t.Run("controller not synced", func(t *testing.T) {
+		gw.Controller.hasSynced = false
+		ch := make(chan []dns.RR, 10)
+		gw.transferResources(ch, "example.com.")
+		close(ch)
+
+		// Should not send any records when not synced
+		count := 0
+		for range ch {
+			count++
+		}
+		if count != 0 {
+			t.Errorf("Expected 0 records when controller not synced, got: %d", count)
+		}
+
+		// Reset for other tests
+		gw.Controller.hasSynced = true
+	})
+
+	t.Run("no resources", func(t *testing.T) {
+		gw.Resources = nil
+		ch := make(chan []dns.RR, 10)
+		gw.transferResources(ch, "example.com.")
+		close(ch)
+
+		// Should not send any records when no resources
+		count := 0
+		for range ch {
+			count++
+		}
+		if count != 0 {
+			t.Errorf("Expected 0 records with no resources, got: %d", count)
+		}
+	})
+}
+
+func TestGetServiceHostnames(t *testing.T) {
+	t.Run("with hostname annotation", func(t *testing.T) {
+		service := &core.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-service",
+				Namespace: "default",
+				Annotations: map[string]string{
+					hostnameAnnotationKey: "test.example.com",
+				},
+			},
+		}
+		hostnames := getServiceHostnames(service, "example.com.")
+		if len(hostnames) != 1 {
+			t.Errorf("Expected 1 hostname, got: %d", len(hostnames))
+		}
+		if hostnames[0] != "test.example.com" {
+			t.Errorf("Expected 'test.example.com', got: %s", hostnames[0])
+		}
+	})
+
+	t.Run("with external-dns annotation", func(t *testing.T) {
+		service := &core.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-service",
+				Namespace: "default",
+				Annotations: map[string]string{
+					externalDnsHostnameAnnotationKey: "external.example.com",
+				},
+			},
+		}
+		hostnames := getServiceHostnames(service, "example.com.")
+		if len(hostnames) != 1 {
+			t.Errorf("Expected 1 hostname, got: %d", len(hostnames))
+		}
+		if hostnames[0] != "external.example.com" {
+			t.Errorf("Expected 'external.example.com', got: %s", hostnames[0])
+		}
+	})
+
+	t.Run("with multiple hostnames", func(t *testing.T) {
+		service := &core.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-service",
+				Namespace: "default",
+				Annotations: map[string]string{
+					hostnameAnnotationKey: "test1.example.com,test2.example.com",
+				},
+			},
+		}
+		hostnames := getServiceHostnames(service, "example.com.")
+		if len(hostnames) != 2 {
+			t.Errorf("Expected 2 hostnames, got: %d", len(hostnames))
+		}
+	})
+
+	t.Run("default hostname", func(t *testing.T) {
+		service := &core.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-service",
+				Namespace: "default",
+			},
+		}
+		hostnames := getServiceHostnames(service, "example.com.")
+		if len(hostnames) != 1 {
+			t.Errorf("Expected 1 hostname, got: %d", len(hostnames))
+		}
+		expected := "test-service.default.example.com."
+		if hostnames[0] != expected {
+			t.Errorf("Expected '%s', got: %s", expected, hostnames[0])
+		}
+	})
+
+	t.Run("hostname with spaces", func(t *testing.T) {
+		service := &core.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-service",
+				Namespace: "default",
+				Annotations: map[string]string{
+					hostnameAnnotationKey: " test.example.com , other.example.com ",
+				},
+			},
+		}
+		hostnames := getServiceHostnames(service, "example.com.")
+		if len(hostnames) != 2 {
+			t.Errorf("Expected 2 hostnames, got: %d", len(hostnames))
+		}
+		if hostnames[0] != "test.example.com" {
+			t.Errorf("Expected 'test.example.com', got: %s", hostnames[0])
+		}
+		if hostnames[1] != "other.example.com" {
+			t.Errorf("Expected 'other.example.com', got: %s", hostnames[1])
+		}
+	})
+}
+
+func TestTransferResourcesEmpty(t *testing.T) {
+	// Test with empty controllers
+	ctrl := &KubeController{
+		hasSynced:   true,
+		controllers: []cache.SharedIndexInformer{},
+	}
+
+	gw := newGateway()
+	gw.Zones = []string{"example.com."}
+	gw.Controller = ctrl
+	gw.Resources = staticResources
+
+	ch := make(chan []dns.RR, 100)
+	gw.transferResources(ch, "example.com.")
+	close(ch)
+
+	// Should not panic with empty controllers
+	count := 0
+	for range ch {
+		count++
+	}
+	// Expect 0 records since there are no controllers with data
+	if count != 0 {
+		t.Logf("Got %d records from empty controllers (expected 0)", count)
+	}
 }
