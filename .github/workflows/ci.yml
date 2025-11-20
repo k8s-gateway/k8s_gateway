@@ -20,7 +20,7 @@ jobs:
         with:
           go-version: stable
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: golangci-lint
@@ -35,7 +35,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: stable
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Cache Go modules
