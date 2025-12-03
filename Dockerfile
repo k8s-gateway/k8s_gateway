@@ -28,7 +28,7 @@ ENV CGO_ENABLED=0 \
 RUN go build -ldflags "-s -w -X github.com/coredns/coredns/coremain.GitCommit=${REVISION} -X main.pluginVersion=${VERSION}" -o coredns cmd/coredns.go
 
 # Update CA Certs
-FROM docker.io/library/alpine:3.22 AS certs
+FROM docker.io/library/alpine:3.23 AS certs
 
 RUN apk --update --no-cache add ca-certificates
 
