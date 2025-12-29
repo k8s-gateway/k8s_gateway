@@ -10,7 +10,7 @@ metadata:
     {{- end }}
 data:
   Corefile: |-
-    .:1053 {
+    {{ .Values.scheme }}.:1053 {
         {{- if .Values.debug.enabled }}
         debug
         {{- end }}

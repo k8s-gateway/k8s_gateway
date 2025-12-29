@@ -171,3 +171,73 @@ tests:
       - matchRegex:
           path: data.Corefile
           pattern: "reload 1m"
+  - it: Should render ConfigMap with scheme prefix when set
+    set:
+      domain: "example.com"
+      scheme: "tls://"
+      watchedResources:
+        - Service
+      ttl: 300
+    template: templates/configmap.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - matchRegex:
+          path: data.Corefile
+          pattern: "tls://\\.\\:1053 \\{"
+      - equal:
+          path: data.Corefile
+          value: |-
+            tls://.:1053 {
+                k8s_gateway example.com {
+                  apex RELEASE-NAME-k8s-gateway.NAMESPACE
+                  ttl 300
+                  resources Service
+                }
+                log
+                errors
+                health {
+                  lameduck 5s
+                }
+                ready
+                prometheus 0.0.0.0:9153
+                forward . /etc/resolv.conf
+                loop
+                reload
+                loadbalance
+              }
+  - it: Should render ConfigMap without scheme prefix when empty
+    set:
+      domain: "example.com"
+      scheme: ""
+      watchedResources:
+        - Service
+      ttl: 300
+    template: templates/configmap.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - matchRegex:
+          path: data.Corefile
+          pattern: "^\\.\\:1053 \\{"
+      - equal:
+          path: data.Corefile
+          value: |-
+            .:1053 {
+                k8s_gateway example.com {
+                  apex RELEASE-NAME-k8s-gateway.NAMESPACE
+                  ttl 300
+                  resources Service
+                }
+                log
+                errors
+                health {
+                  lameduck 5s
+                }
+                ready
+                prometheus 0.0.0.0:9153
+                forward . /etc/resolv.conf
+                loop
+                reload
+                loadbalance
+              }
