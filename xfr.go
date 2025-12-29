@@ -207,8 +207,60 @@ func (gw *Gateway) transferServices(records map[string][]dns.RR, zone string) {
 	}
 }
 
+// findGatewayController searches for and returns the gateway controller informer
+func (gw *Gateway) findGatewayController() cache.SharedIndexInformer {
+	for _, c := range gw.Controller.controllers {
+		items := c.GetStore().List()
+		if len(items) > 0 {
+			if _, ok := items[0].(*gatewayapi_v1.Gateway); ok {
+				return c
+			}
+		}
+	}
+	return nil
+}
+
+// routeInfo encapsulates the common route information needed for DNS record generation
+type routeInfo struct {
+	labels      map[string]string
+	namespace   string
+	parentRefs  []gatewayapi_v1.ParentReference
+	hostnames   []gatewayapi_v1.Hostname
+}
+
+// transferRouteResources is a generic helper that processes route resources and generates DNS records
+func (gw *Gateway) transferRouteResources(records map[string][]dns.RR, zone string, gwCtrl cache.SharedIndexInformer, route routeInfo) {
+	// Check if object should be ignored
+	if checkIgnoreLabel(route.labels) {
+		return
+	}
+
+	// Lookup gateway addresses
+	addrs := lookupGateways(gwCtrl, route.parentRefs, route.namespace, gw.resourceFilters.gatewayClasses)
+	if len(addrs) == 0 {
+		return
+	}
+
+	// Generate records for each hostname
+	for _, hostname := range route.hostnames {
+		hostnameStr := strings.ToLower(string(hostname))
+		if !strings.HasSuffix(hostnameStr, zone) {
+			continue
+		}
+
+		fqdn := dns.Fqdn(hostnameStr)
+		addRecords(records, fqdn, gw.A(fqdn, ipv4Only(addrs)))
+		addRecords(records, fqdn, gw.AAAA(fqdn, ipv6Only(addrs)))
+	}
+}
+
 // transferHTTPRoutes collects DNS records from HTTPRoute resources
 func (gw *Gateway) transferHTTPRoutes(records map[string][]dns.RR, zone string) {
+	gwCtrl := gw.findGatewayController()
+	if gwCtrl == nil {
+		return
+	}
+
 	for _, ctrl := range gw.Controller.controllers {
 		items := ctrl.GetStore().List()
 		for _, item := range items {
@@ -217,48 +269,23 @@ func (gw *Gateway) transferHTTPRoutes(records map[string][]dns.RR, zone string) 
 				continue
 			}
 
-			// Check if object should be ignored
-			if checkIgnoreLabel(httpRoute.Labels) {
-				continue
-			}
-
-			// Get gateway addresses
-			var gwCtrl cache.SharedIndexInformer
-			for _, c := range gw.Controller.controllers {
-				items := c.GetStore().List()
-				if len(items) > 0 {
-					if _, ok := items[0].(*gatewayapi_v1.Gateway); ok {
-						gwCtrl = c
-						break
-					}
-				}
-			}
-			if gwCtrl == nil {
-				continue
-			}
-
-			addrs := lookupGateways(gwCtrl, httpRoute.Spec.ParentRefs, httpRoute.Namespace, gw.resourceFilters.gatewayClasses)
-			if len(addrs) == 0 {
-				continue
-			}
-
-			// Generate records for each hostname
-			for _, hostname := range httpRoute.Spec.Hostnames {
-				hostnameStr := strings.ToLower(string(hostname))
-				if !strings.HasSuffix(hostnameStr, zone) {
-					continue
-				}
-
-				fqdn := dns.Fqdn(hostnameStr)
-				addRecords(records, fqdn, gw.A(fqdn, ipv4Only(addrs)))
-				addRecords(records, fqdn, gw.AAAA(fqdn, ipv6Only(addrs)))
-			}
+			gw.transferRouteResources(records, zone, gwCtrl, routeInfo{
+				labels:     httpRoute.Labels,
+				namespace:  httpRoute.Namespace,
+				parentRefs: httpRoute.Spec.ParentRefs,
+				hostnames:  httpRoute.Spec.Hostnames,
+			})
 		}
 	}
 }
 
 // transferTLSRoutes collects DNS records from TLSRoute resources
 func (gw *Gateway) transferTLSRoutes(records map[string][]dns.RR, zone string) {
+	gwCtrl := gw.findGatewayController()
+	if gwCtrl == nil {
+		return
+	}
+
 	for _, ctrl := range gw.Controller.controllers {
 		items := ctrl.GetStore().List()
 		for _, item := range items {
@@ -267,48 +294,29 @@ func (gw *Gateway) transferTLSRoutes(records map[string][]dns.RR, zone string) {
 				continue
 			}
 
-			// Check if object should be ignored
-			if checkIgnoreLabel(tlsRoute.Labels) {
-				continue
+			// Convert TLSRoute hostnames to the common type
+			var hostnames []gatewayapi_v1.Hostname
+			for _, h := range tlsRoute.Spec.Hostnames {
+				hostnames = append(hostnames, gatewayapi_v1.Hostname(h))
 			}
 
-			// Get gateway addresses
-			var gwCtrl cache.SharedIndexInformer
-			for _, c := range gw.Controller.controllers {
-				items := c.GetStore().List()
-				if len(items) > 0 {
-					if _, ok := items[0].(*gatewayapi_v1.Gateway); ok {
-						gwCtrl = c
-						break
-					}
-				}
-			}
-			if gwCtrl == nil {
-				continue
-			}
-
-			addrs := lookupGateways(gwCtrl, tlsRoute.Spec.ParentRefs, tlsRoute.Namespace, gw.resourceFilters.gatewayClasses)
-			if len(addrs) == 0 {
-				continue
-			}
-
-			// Generate records for each hostname
-			for _, hostname := range tlsRoute.Spec.Hostnames {
-				hostnameStr := strings.ToLower(string(hostname))
-				if !strings.HasSuffix(hostnameStr, zone) {
-					continue
-				}
-
-				fqdn := dns.Fqdn(hostnameStr)
-				addRecords(records, fqdn, gw.A(fqdn, ipv4Only(addrs)))
-				addRecords(records, fqdn, gw.AAAA(fqdn, ipv6Only(addrs)))
-			}
+			gw.transferRouteResources(records, zone, gwCtrl, routeInfo{
+				labels:     tlsRoute.Labels,
+				namespace:  tlsRoute.Namespace,
+				parentRefs: tlsRoute.Spec.ParentRefs,
+				hostnames:  hostnames,
+			})
 		}
 	}
 }
 
 // transferGRPCRoutes collects DNS records from GRPCRoute resources
 func (gw *Gateway) transferGRPCRoutes(records map[string][]dns.RR, zone string) {
+	gwCtrl := gw.findGatewayController()
+	if gwCtrl == nil {
+		return
+	}
+
 	for _, ctrl := range gw.Controller.controllers {
 		items := ctrl.GetStore().List()
 		for _, item := range items {
@@ -317,42 +325,12 @@ func (gw *Gateway) transferGRPCRoutes(records map[string][]dns.RR, zone string) 
 				continue
 			}
 
-			// Check if object should be ignored
-			if checkIgnoreLabel(grpcRoute.Labels) {
-				continue
-			}
-
-			// Get gateway addresses
-			var gwCtrl cache.SharedIndexInformer
-			for _, c := range gw.Controller.controllers {
-				items := c.GetStore().List()
-				if len(items) > 0 {
-					if _, ok := items[0].(*gatewayapi_v1.Gateway); ok {
-						gwCtrl = c
-						break
-					}
-				}
-			}
-			if gwCtrl == nil {
-				continue
-			}
-
-			addrs := lookupGateways(gwCtrl, grpcRoute.Spec.ParentRefs, grpcRoute.Namespace, gw.resourceFilters.gatewayClasses)
-			if len(addrs) == 0 {
-				continue
-			}
-
-			// Generate records for each hostname
-			for _, hostname := range grpcRoute.Spec.Hostnames {
-				hostnameStr := strings.ToLower(string(hostname))
-				if !strings.HasSuffix(hostnameStr, zone) {
-					continue
-				}
-
-				fqdn := dns.Fqdn(hostnameStr)
-				addRecords(records, fqdn, gw.A(fqdn, ipv4Only(addrs)))
-				addRecords(records, fqdn, gw.AAAA(fqdn, ipv6Only(addrs)))
-			}
+			gw.transferRouteResources(records, zone, gwCtrl, routeInfo{
+				labels:     grpcRoute.Labels,
+				namespace:  grpcRoute.Namespace,
+				parentRefs: grpcRoute.Spec.ParentRefs,
+				hostnames:  grpcRoute.Spec.Hostnames,
+			})
 		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/coredns/coredns/plugin/transfer"
+	"github.com/coredns/coredns/request"
 	"github.com/miekg/dns"
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -86,7 +87,19 @@ func TestTransfer(t *testing.T) {
 
 	// Test IXFR fallback (same serial)
 	t.Run("ixfr fallback", func(t *testing.T) {
-		ch, err := gw.Transfer("example.com.", 12345)
+		// First get the actual SOA serial
+		state := request.Request{Zone: "example.com."}
+		soa := gw.soa(state)
+		
+		// Assert serial is non-zero
+		if soa.Serial == 0 {
+			t.Fatal("SOA serial should not be zero")
+		}
+		
+		actualSerial := soa.Serial
+		
+		// Now test IXFR fallback with the actual serial
+		ch, err := gw.Transfer("example.com.", actualSerial)
 		if err != nil {
 			t.Errorf("Expected no error for IXFR fallback, got: %v", err)
 		}
@@ -105,8 +118,18 @@ func TestTransfer(t *testing.T) {
 			t.Errorf("Expected exactly 1 record (SOA) for IXFR fallback, got: %d", len(records))
 		}
 
-		if records[0].Header().Rrtype != dns.TypeSOA {
+		if len(records) > 0 && records[0].Header().Rrtype != dns.TypeSOA {
 			t.Errorf("Expected SOA record for IXFR fallback, got: %s", dns.TypeToString[records[0].Header().Rrtype])
+		}
+		
+		// Verify the returned SOA has the same serial
+		if len(records) > 0 {
+			returnedSOA, ok := records[0].(*dns.SOA)
+			if !ok {
+				t.Error("Expected returned record to be SOA type")
+			} else if returnedSOA.Serial != actualSerial {
+				t.Errorf("Expected returned SOA serial to be %d, got: %d", actualSerial, returnedSOA.Serial)
+			}
 		}
 	})
 }
