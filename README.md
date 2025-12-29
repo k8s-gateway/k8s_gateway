@@ -96,14 +96,20 @@ k8s_gateway example.com {
 The zone transfer functionality is automatically enabled and follows the DNS standard protocol. When a zone transfer is requested, `k8s_gateway` will:
 1. Send the SOA record
 2. Send NS records for the zone
-3. Send all A, AAAA, and TXT records for configured resources (Ingress, Service, HTTPRoute, TLSRoute, GRPCRoute, DNSEndpoint)
+3. Send DNS records for all configured resources:
+   - **Ingress**: A and AAAA records
+   - **Service**: A and AAAA records
+   - **HTTPRoute**: A and AAAA records
+   - **TLSRoute**: A and AAAA records
+   - **GRPCRoute**: A and AAAA records
+   - **DNSEndpoint**: A, AAAA, and TXT records
 4. Send the SOA record again to mark the end of the transfer
 
 Zone transfers respect all configured filters including `ingressClasses`, `gatewayClasses`, and the `k8s-gateway.dns/ignore` label.
 
 To enable zone transfers in your DNS server configuration, you may need to configure the `transfer` plugin. For example:
 
-```
+```corefile
 k8s_gateway example.com {
     resources Ingress Service
 }
