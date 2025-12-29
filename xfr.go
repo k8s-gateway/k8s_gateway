@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"net/netip"
+	"runtime/debug"
 	"sort"
 	"strings"
 
@@ -40,7 +41,12 @@ func (gw *Gateway) Transfer(zone string, serial uint32) (<-chan []dns.RR, error)
 	ch := make(chan []dns.RR)
 
 	go func() {
-		defer close(ch)
+		defer func() {
+			if r := recover(); r != nil {
+				log.Errorf("Panic in zone transfer for zone %s: %v\nStack trace:\n%s", zone, r, debug.Stack())
+			}
+			close(ch)
+		}()
 
 		// Send initial SOA
 		ch <- []dns.RR{soa}
