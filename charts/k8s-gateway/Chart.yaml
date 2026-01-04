@@ -10,4 +10,4 @@ maintainers:
 annotations:
   artifacthub.io/changes: |
     - kind: added
-      description: add podAnnotations support for custom pod annotations
+      description: add podAnnotations support
