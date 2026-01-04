@@ -18,6 +18,9 @@ domain: ""
 # Labels to apply to all resources
 customLabels: {}
 
+# Annotations to apply to pods
+podAnnotations: {}
+
 # TTL for non-apex responses (in seconds)
 ttl: 300
 

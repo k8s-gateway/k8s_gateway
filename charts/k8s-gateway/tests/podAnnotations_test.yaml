@@ -1,0 +1,37 @@
+---
+suite: Pod Annotations
+
+tests:
+  - it: Should apply custom pod annotations
+    set:
+      domain: example.com
+      watchedResources:
+        - Service
+      podAnnotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9153"
+        prometheus.io/path: "/metrics"
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["prometheus.io/scrape"]
+          value: "true"
+      - equal:
+          path: spec.template.metadata.annotations["prometheus.io/port"]
+          value: "9153"
+      - equal:
+          path: spec.template.metadata.annotations["prometheus.io/path"]
+          value: "/metrics"
+      - isNotEmpty:
+          path: spec.template.metadata.annotations["checksum/config"]
+  - it: Should not have podAnnotations when not set
+    set:
+      domain: example.com
+      watchedResources:
+        - Service
+    template: templates/deployment.yaml
+    asserts:
+      - isNotEmpty:
+          path: spec.template.metadata.annotations["checksum/config"]
+      - isNull:
+          path: spec.template.metadata.annotations["prometheus.io/scrape"]
