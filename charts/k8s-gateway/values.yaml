@@ -15,6 +15,12 @@ imagePullSecrets: []
 # Delegated domain
 domain: ""
 
+# Optional scheme for DNS server (e.g., "tls://", "https://", "grpc://")
+# Used to enable DoT (DNS over TLS), DoH (DNS over HTTPS), or gRPC protocols
+# Leave empty for standard DNS
+# See: https://coredns.io/plugins/tls/
+scheme: ""
+
 # Labels to apply to all resources
 customLabels: {}
 
@@ -70,6 +76,13 @@ extraZonePlugins:
   - name: loop
   - name: reload
   - name: loadbalance
+  # Example TLS configuration (requires scheme: "tls://" and TLS certificates)
+  # - name: tls
+  #   parameters: /etc/coredns/tls/tls.crt /etc/coredns/tls/tls.key
+  #   configBlock: |-
+  #     client_auth {
+  #       type request
+  #     }
 
 serviceAccount:
   create: true
