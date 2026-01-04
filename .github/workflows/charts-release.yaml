@@ -39,7 +39,7 @@ jobs:
         id: collect-charts
         with:
           repoConfigFile: ./.ci/repo-config.yaml
-          overrideCharts: ${{ inputs.charts && format('["{0}"]', inputs.charts) || '[]' }}
+          overrideCharts: "[${{ inputs.charts }}]"
 
   release-github-pages:
     name: Release Charts to GitHub pages
