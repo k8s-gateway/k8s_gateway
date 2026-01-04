@@ -10,6 +10,7 @@ The following table lists the configurable parameters of the k8s_gateway chart a
 | -------------------------------- | ----------------------------------------------------------------------------------------- | --------------------- |
 | `domain`                         | Delegated domain(s)                                                                       |                       |
 | `customLabels`                   | Labels to apply to all resources                                                          | `{}`                  |
+| `podAnnotations`                 | Annotations to apply to pods                                                              | `{}`                  |
 | `watchedResources`               | Resources to watch, e.g. `watchedResources: ["Ingress"]`                                  | `["Ingress", "Service"]`|
 | `filters.ingressClasses`         | Filter Ingress resources by their IngressClassName property                               | `[]`                  |
 | `filters.gatewayClasses`         | Filter Gateway resources by their GatewayClassName property                               | `[]`                  |
