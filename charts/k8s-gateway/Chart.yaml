@@ -11,4 +11,3 @@ annotations:
   artifacthub.io/changes: |
     - kind: added
       description: Add scheme configuration option to enable DoT/DoH/gRPC protocols
-
