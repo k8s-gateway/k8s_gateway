@@ -156,4 +156,4 @@ jobs:
       createGithubRelease: true
       publishToGhPages: true
       publishToOciRegistry: true
-      deployGhPages: true
+      deployGhPages: fals  e

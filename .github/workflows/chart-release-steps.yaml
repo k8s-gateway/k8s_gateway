@@ -175,7 +175,7 @@ jobs:
           git pull
 
       - name: Update Helm chart index
-        if: ${{ inputs.publishToGhPages && inputs.deployGhPages }}
+        if: ${{ inputs.publishToGhPages }}
         shell: bash
         working-directory: gh-pages
         run: |
