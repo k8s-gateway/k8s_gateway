@@ -15,7 +15,7 @@ on:
     branches:
       - master
     paths:
-      - "charts/**"
+      - "charts/*"
 
 permissions:
   contents: read
@@ -75,8 +75,11 @@ jobs:
               const globber = await glob.create('charts/*/*', { implicitDescendants: false });
               for await (const file of globber.globGenerator()) {
                 if (fs.lstatSync(file).isDirectory()) {
-                  relativePath = file.slice(`${cwd}/charts/`.length);
-                  tmpCharts.push(relativePath);
+                  const chartYamlPath = `${file}/Chart.yaml`;
+                  if (fs.existsSync(chartYamlPath)) {
+                    relativePath = file.slice(`${cwd}/charts/`.length);
+                    tmpCharts.push(relativePath);
+                  }
                 }
               }
             } else {
@@ -93,7 +96,7 @@ jobs:
                 }
               });
             }
-
+            
             let otherCharts = tmpCharts.filter(chart => !chart.startsWith('library/'));
             core.setOutput('otherChartsToRelease', JSON.stringify(otherCharts));
 
