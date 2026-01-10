@@ -42,6 +42,10 @@ jobs:
     name: Release chart
     runs-on: ubuntu-24.04
 
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     permissions:
       pages: write
       id-token: write
@@ -190,6 +194,7 @@ jobs:
           commit_author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
 
       - name: Deploy changes to GitHub Pages
+        id: deployment
         if: ${{ inputs.publishToGhPages && inputs.deployGhPages }}
         uses: ./src/.github/actions/publish-folder-to-pages
         with:
