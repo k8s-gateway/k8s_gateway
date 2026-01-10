@@ -42,9 +42,9 @@ jobs:
     name: Release chart
     runs-on: ubuntu-24.04
 
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+#    environment:
+#      name: github-pages
+#      url: ${{ steps.deployment.outputs.page_url }}
 
     permissions:
       pages: write
