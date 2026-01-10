@@ -72,7 +72,7 @@ jobs:
             let tmpCharts = []
             if (input === '[]') {
               console.log("Empty charts input, scanning for charts in repository");
-              const globber = await glob.create('charts/*/*', { implicitDescendants: false });
+              const globber = await glob.create('charts/*', { implicitDescendants: false });
               for await (const file of globber.globGenerator()) {
                 if (fs.lstatSync(file).isDirectory()) {
                   const chartYamlPath = `${file}/Chart.yaml`;
