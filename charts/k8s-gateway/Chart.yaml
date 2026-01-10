@@ -2,12 +2,12 @@ apiVersion: v2
 name: k8s-gateway
 description: A Helm chart for the k8s_gateway CoreDNS plugin
 type: application
-version: 3.4.0
-appVersion: 1.6.1
+version: 3.4.1
+appVersion: 1.6.2
 maintainers:
   - url: https://github.com/samip5
     name: samip5
 annotations:
   artifacthub.io/changes: |
-    - kind: added
-      description: Add scheme configuration option to enable DoT/DoH/gRPC protocols
+    - kind: changed
+      description: container image tag was updated to 1.6.2 from 1.6.1
