@@ -112,9 +112,16 @@ jobs:
 
             const eventName = '${{ github.event_name }}';
             const repoSettings = JSON.parse(REPO_SETTINGS);
-
-            const otherChartsInput = JSON.parse(eventName === 'workflow_dispatch' ? SPECIFIED_CHARTS : CHANGED_CHARTS);
-            const excludedFromRelease = repoSettings['excluded-charts-release'];
+            
+            let otherChartsInput = JSON.parse(eventName === 'workflow_dispatch' ? SPECIFIED_CHARTS : CHANGED_CHARTS);
+            if (!Array.isArray(otherChartsInput)) {
+              otherChartsInput = [];
+            }
+            
+            let excludedFromRelease = repoSettings['excluded-charts-release'];
+            if (!Array.isArray(excludedFromRelease)) {
+              excludedFromRelease = [];
+            }
 
             const otherCharts = otherChartsInput.filter(item => excludedFromRelease.indexOf(item) < 0);
             core.setOutput('otherChartsToRelease', JSON.stringify(otherCharts));
