@@ -1,4 +1,2 @@
-chart-dirs:
-  - charts
 excluded-charts-lint: []
 excluded-charts-install: []
