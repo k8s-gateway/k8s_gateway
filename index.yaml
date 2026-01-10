@@ -7,9 +7,9 @@ entries:
           description: container image tag was updated to 1.6.2 from 1.6.1
     apiVersion: v2
     appVersion: 1.6.2
-    created: "2026-01-10T05:10:54.942990949Z"
+    created: "2026-01-10T05:15:18.418261422Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
-    digest: 9ebedf27daaa95788b024e5dcc8365b4b7bbf02b9f4d8f4e794111ebe1ae8417
+    digest: 6c17a19fdc95e88d62c3ee72b0316212f00e52353e4f0e220b84f5c554da62b0
     maintainers:
     - name: samip5
       url: https://github.com/samip5
@@ -24,7 +24,7 @@ entries:
           description: Add scheme configuration option to enable DoT/DoH/gRPC protocols
     apiVersion: v2
     appVersion: 1.6.1
-    created: "2026-01-10T05:10:54.942459583Z"
+    created: "2026-01-10T05:15:18.41768962Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: 9a9801680943059b8eaddf36d3871c766a4021e3bbbbfb84663fee2afdf957b1
     maintainers:
@@ -41,7 +41,7 @@ entries:
           description: add podAnnotations support
     apiVersion: v2
     appVersion: 1.6.1
-    created: "2026-01-10T05:10:54.941886029Z"
+    created: "2026-01-10T05:15:18.417184612Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: 63b3e52e97cc60e670a762e7f8d28a8f6d19de1168d76824c20880a3df7d4c02
     maintainers:
@@ -58,7 +58,7 @@ entries:
           description: allow setting loadBalancerClass on Service
     apiVersion: v2
     appVersion: 1.6.0
-    created: "2026-01-10T05:10:54.941335358Z"
+    created: "2026-01-10T05:15:18.416577033Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: dbc891ed25b7648c9127af27d5d9d4df25d0c245234b466e758e9b3cfe3146e7
     maintainers:
@@ -75,7 +75,7 @@ entries:
           description: update to newer app version
     apiVersion: v2
     appVersion: 1.6.0
-    created: "2026-01-10T05:10:54.940139193Z"
+    created: "2026-01-10T05:15:18.416016843Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: e0bba7732048e66252badbd61d0933bbccd80e02aef53050002c284c4aa9d79b
     maintainers:
@@ -92,7 +92,7 @@ entries:
           description: add fallthrough and reload parameters to zone file plugin
     apiVersion: v2
     appVersion: 1.5.2
-    created: "2026-01-10T05:10:54.939639397Z"
+    created: "2026-01-10T05:15:18.41516218Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: 752fc03238b2703d1ae366afe862a86a5d3d2b08f8f5a5acb22a4e93d48bd31c
     maintainers:
@@ -109,7 +109,7 @@ entries:
           description: update docker image from 1.5.0 to 1.5.1
     apiVersion: v2
     appVersion: 1.5.1
-    created: "2026-01-10T05:10:54.939146974Z"
+    created: "2026-01-10T05:15:18.41407582Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: e971f8a086541d84739afab0c29c58a1b1b0de0d67528a72936ee933aca786ff
     maintainers:
@@ -126,7 +126,7 @@ entries:
           description: update docker image from 1.4.0 to 1.5.0
     apiVersion: v2
     appVersion: 1.5.0
-    created: "2026-01-10T05:10:54.938667296Z"
+    created: "2026-01-10T05:15:18.413604655Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: acc6f86ec81d522c0e47135ba75f13d42545f1cf5a46bbf0b5470f157b5a6d6c
     maintainers:
@@ -143,7 +143,7 @@ entries:
           description: docker image update
     apiVersion: v2
     appVersion: 1.4.0
-    created: "2026-01-10T05:10:54.938142583Z"
+    created: "2026-01-10T05:15:18.413074851Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: 5abeaf5e566e7702d4b375d08d82853c4f5235c36e82df2a53a8750c65c92d22
     maintainers:
@@ -160,7 +160,7 @@ entries:
           description: added ability to set image pull secrets
     apiVersion: v2
     appVersion: 1.2.0
-    created: "2026-01-10T05:10:54.937622609Z"
+    created: "2026-01-10T05:15:18.412604066Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: f2b131d58e8de0c3ec1b24ccbcc83e406448d69798e7a566d4ad9e8774a03813
     maintainers:
@@ -177,7 +177,7 @@ entries:
           description: Set default value for watchedResources to ["Ingress", "Service"]
     apiVersion: v2
     appVersion: 1.2.0
-    created: "2026-01-10T05:10:54.937149713Z"
+    created: "2026-01-10T05:15:18.412131379Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: d8c3063468befd5f1eec65890bfc35551e92074630c457acc3d6afc7d6e2d313
     maintainers:
@@ -194,7 +194,7 @@ entries:
           description: Updated app version
     apiVersion: v2
     appVersion: 1.2.0
-    created: "2026-01-10T05:10:54.936651289Z"
+    created: "2026-01-10T05:15:18.411630779Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: d8b90786871cd3ec42969af1a545164888fafc6575b50a5939cea86f45ee8ddf
     maintainers:
@@ -215,7 +215,7 @@ entries:
           description: fixed indentation issue in configmap.yaml
     apiVersion: v2
     appVersion: 1.1.1
-    created: "2026-01-10T05:10:54.936194554Z"
+    created: "2026-01-10T05:15:18.411083011Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: 3ff7546f5d22ac16b03cadf1c35ebc3f04243548e550c04e6282a039c314bd89
     maintainers:
@@ -228,7 +228,7 @@ entries:
     version: 3.1.2
   - apiVersion: v2
     appVersion: 1.1.1
-    created: "2026-01-10T05:10:54.935705077Z"
+    created: "2026-01-10T05:15:18.410571121Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: d59d768f911dcce1e3a54879ae655a2d1ca3a6d9671971abd1c778b44a3d075d
     maintainers:
@@ -241,7 +241,7 @@ entries:
     version: 3.1.1
   - apiVersion: v2
     appVersion: 1.0.3
-    created: "2026-01-10T05:10:54.935290811Z"
+    created: "2026-01-10T05:15:18.410147584Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: caae74a23ef6d9389c3620e5a9e2f0b00a64533278e7ca908f5ed1d8d48b4469
     maintainers:
@@ -254,7 +254,7 @@ entries:
     version: 3.1.0
   - apiVersion: v2
     appVersion: 1.0.3
-    created: "2026-01-10T05:10:54.934829126Z"
+    created: "2026-01-10T05:15:18.409679625Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: 35f69a932613049a0c4d56d9c7d2147dff54444ac0eac1a7335b827479e6a403
     maintainers:
@@ -267,7 +267,7 @@ entries:
     version: 3.0.2
   - apiVersion: v2
     appVersion: 1.0.1
-    created: "2026-01-10T05:10:54.9335976Z"
+    created: "2026-01-10T05:15:18.409256008Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: 3685eb04ffc01e3725d5660b7933a1f222fded3799e3fe7cbe8cba9035ab0955
     maintainers:
@@ -280,7 +280,7 @@ entries:
     version: 3.0.1
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-01-10T05:10:54.933129743Z"
+    created: "2026-01-10T05:15:18.408766388Z"
     description: A Helm chart for the k8s_gateway CoreDNS plugin
     digest: 10020f32490ab07664fff4006cf48ab0bcb1df8ed101bd0c4a802099c9d171db
     maintainers:
@@ -291,4 +291,4 @@ entries:
     urls:
     - https://k8s-gateway.github.io/k8s_gateway/k8s-gateway-3.0.0.tgz
     version: 3.0.0
-generated: "2026-01-10T05:10:54.932318874Z"
+generated: "2026-01-10T05:15:18.40769082Z"
