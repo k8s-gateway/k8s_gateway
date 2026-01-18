@@ -62,7 +62,7 @@ jobs:
           path: src
 
       - name: Install Mise and required tools
-        uses: jdx/mise-action@146a28175021df8ca24f8ee1828cc2a60f980bd5 # v3.5.1
+        uses: jdx/mise-action@c53b9236f0b3370f31520f8b142f141256d839c6 # v3.6.0
 
       - name: Login to OCI Registry
         if: ${{ inputs.publishToOciRegistry }}
