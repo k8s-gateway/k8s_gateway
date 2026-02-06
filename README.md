@@ -301,3 +301,27 @@ To cleanup local environment do:
 ```
 make nuke
 ```
+
+## CI and PR Testing
+
+### Pull Request Container Images
+
+When you open a pull request, the CI automatically builds and pushes container images to [ttl.sh](https://ttl.sh) (an anonymous, ephemeral Docker registry). These images are available for testing and have a 24-hour TTL (time-to-live).
+
+PR images are tagged with both the PR number and commit SHA for uniqueness:
+```
+ttl.sh/k8s-gateway-pr-<PR_NUMBER>-<COMMIT_SHA>:pr-<PR_NUMBER>-<PLATFORM>
+```
+
+For example, PR #123 with commit `abc123...` would produce images like:
+- `ttl.sh/k8s-gateway-pr-123-abc123...:pr-123-amd64`
+- `ttl.sh/k8s-gateway-pr-123-abc123...:pr-123-arm64`
+
+The exact image locations are displayed in the GitHub Actions workflow output for each PR build.
+
+You can pull and test these images directly:
+```bash
+docker pull ttl.sh/k8s-gateway-pr-123-abc123...:pr-123-amd64
+```
+
+**Note:** Images are automatically deleted after 24 hours.
