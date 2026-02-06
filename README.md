@@ -62,6 +62,7 @@ k8s_gateway [ZONES...]
     apex APEX
     secondary SECONDARY
     kubeconfig KUBECONFIG [CONTEXT]
+    soa REFRESH RETRY EXPIRE
     fallthrough [ZONES...]
 }
 ```
@@ -72,6 +73,7 @@ k8s_gateway [ZONES...]
 * `ttl` can be used to override the default TTL value of 60 seconds.
 * `apex` can be used to override the default apex record value of `{ReleaseName}-k8s-gateway.{Namespace}`
 * `secondary` can be used to specify the optional apex record value of a peer nameserver running in the cluster (see `Dual Nameserver Deployment` section below).
+* `soa` can be used to override SOA record timing values. Syntax: `soa <refresh> <retry> <expire>` (in seconds). Default values are: refresh=7200 (2 hours), retry=1800 (30 minutes), expire=86400 (24 hours). These values control how secondary DNS servers refresh zone data.
 * `kubeconfig` can be used to connect to a remote Kubernetes cluster using a kubeconfig file. `CONTEXT` is optional, if not set, then the current context specified in kubeconfig will be used. It supports TLS, username and password, or token-based authentication.
 * `fallthrough` if zone matches and no record can be generated, pass request to the next plugin. If **[ZONES...]** is omitted, then fallthrough happens for all zones for which the plugin is authoritative. If specific zones are listed (for example `in-addr.arpa` and `ip6.arpa`), then only queries for those zones will be subject to fallthrough.
 
@@ -82,6 +84,7 @@ k8s_gateway example.com {
     resources Ingress
     ttl 30
     apex exdns-1-k8s-gateway.kube-system
+    soa 3600 1800 604800
     secondary exdns-2-k8s-gateway.kube-system
     kubeconfig /.kube/config
 }

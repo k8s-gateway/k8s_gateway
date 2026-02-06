@@ -40,6 +40,10 @@ var (
 	defaultApex       = "dns1.kube-system"
 	defaultHostmaster = "hostmaster"
 	defaultSecondNS   = ""
+	// Default SOA values (RFC 1912 recommendations)
+	defaultSOARefresh = uint32(7200)  // 2 hours
+	defaultSOARetry   = uint32(1800)  // 30 minutes
+	defaultSOAExpire  = uint32(86400) // 24 hours
 )
 
 // Gateway stores all runtime configuration of a plugin
@@ -59,6 +63,11 @@ type Gateway struct {
 	nodeAddressType     string
 	ExternalAddrFunc    func(request.Request) []dns.RR
 	resourceFilters     ResourceFilters
+
+	// SOA record timing values (configurable)
+	soaRefresh uint32
+	soaRetry   uint32
+	soaExpire  uint32
 
 	// Fields for content-driven SOA serial
 	lastSerial  uint32
