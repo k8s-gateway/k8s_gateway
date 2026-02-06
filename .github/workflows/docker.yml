@@ -59,6 +59,7 @@ jobs:
             type=ref,event=pr,suffix=-${{ matrix.platform }}
             type=semver,pattern={{version}},suffix=-${{ matrix.platform }}
             type=semver,pattern={{major}}.{{minor}},suffix=-${{ matrix.platform }}
+            # ttl.sh uses tag name to determine TTL (time-to-live)
             type=raw,value=24h,suffix=-${{ matrix.platform }},enable=${{ github.event_name == 'pull_request' }}
 
       - name: Set output type
@@ -67,7 +68,7 @@ jobs:
           if [ "${{ github.event_name }}" = "release" ]; then
             echo "type=type=image,name=ghcr.io/${{ github.repository_owner }}/k8s_gateway,push-by-digest=true,name-canonical=true,push=true" >> $GITHUB_OUTPUT
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "type=type=image,push=true" >> $GITHUB_OUTPUT
+            echo "type=image,push=true" >> $GITHUB_OUTPUT
           else
             echo "type=type=docker" >> $GITHUB_OUTPUT
           fi
