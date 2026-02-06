@@ -63,6 +63,9 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
             echo "type=type=image,name=ghcr.io/${{ github.repository_owner }}/k8s_gateway,push-by-digest=true,name-canonical=true,push=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "type=type=image,name=ttl.sh/k8s-gateway-pr${{ github.event.pull_request.number }},push=true" >> $GITHUB_OUTPUT
+            echo "tags=ttl.sh/k8s-gateway-pr${{ github.event.pull_request.number }}:24h-${{ matrix.platform }}" >> $GITHUB_OUTPUT
           else
             echo "type=type=docker" >> $GITHUB_OUTPUT
           fi
@@ -98,9 +101,6 @@ jobs:
     name: PR release
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
-
       - name: Login to ttl.sh
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
@@ -108,25 +108,14 @@ jobs:
           username: anonymous
           password: anonymous
 
-      - name: Build Meta
-        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
-        id: meta
-        env:
-          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
-        with:
-          images: ttl.sh/k8s-gateway-${{ github.event.pull_request.number }}:24h
-          tags: |
-            type=ref,event=pr
-            type=sha,prefix=pr-${{ github.event.pull_request.number }}-
-
       - name: Push Images
         id: push
         uses: Noelware/docker-manifest-action@v1
         with:
-          tags: ${{ join(fromJSON(steps.meta.outputs.json).tags, ',') }}
+          tags: ttl.sh/k8s-gateway-pr${{ github.event.pull_request.number }}:24h
           inputs: >-
-            ghcr.io/${{ github.repository_owner }}/k8s_gateway@${{ needs.build.outputs.arm64 }},
-            ghcr.io/${{ github.repository_owner }}/k8s_gateway@${{ needs.build.outputs.amd64 }}
+            ttl.sh/k8s-gateway-pr${{ github.event.pull_request.number }}@${{ needs.build.outputs.arm64 }},
+            ttl.sh/k8s-gateway-pr${{ github.event.pull_request.number }}@${{ needs.build.outputs.amd64 }}
           push: true
 
       - name: Comment PR
@@ -137,7 +126,7 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `🐳 **Docker images published to ttl.sh (available for 24 hours)**\n\n${JSON.parse('${{ steps.meta.outputs.json }}').tags.map(tag => `- \`${tag}\``).join('\n')}`
+              body: '🐳 **Docker image published to ttl.sh (24 hour TTL)**\n\n`ttl.sh/k8s-gateway-pr${{ github.event.pull_request.number }}:24h`'
             })
       
 
