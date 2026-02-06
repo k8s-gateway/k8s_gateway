@@ -463,4 +463,119 @@ func TestAddRecordsHelper(t *testing.T) {
 	if len(records["test.example.com."]) != 1 {
 		t.Errorf("Expected 1 record for test.example.com., got %d", len(records["test.example.com."]))
 	}
+	
+	// Test adding empty records (should not add)
+	addRecords(records, "empty.example.com.", []dns.RR{})
+	if len(records) != 1 {
+		t.Errorf("Expected 1 entry in records map after adding empty, got %d", len(records))
+	}
+	
+	// Test adding multiple records to same key
+	rr2 := &dns.AAAA{
+		Hdr: dns.RR_Header{
+			Name:   "test.example.com.",
+			Rrtype: dns.TypeAAAA,
+			Class:  dns.ClassINET,
+			Ttl:    300,
+		},
+	}
+	addRecords(records, "test.example.com.", []dns.RR{rr2})
+	if len(records["test.example.com."]) != 2 {
+		t.Errorf("Expected 2 records for test.example.com., got %d", len(records["test.example.com."]))
+	}
 }
+
+func TestContainsHelper(t *testing.T) {
+	slice := []string{"foo", "bar", "baz"}
+	
+	if !contains(slice, "foo") {
+		t.Error("Expected contains to find 'foo'")
+	}
+	
+	if !contains(slice, "bar") {
+		t.Error("Expected contains to find 'bar'")
+	}
+	
+	if contains(slice, "notfound") {
+		t.Error("Expected contains to not find 'notfound'")
+	}
+	
+	// Test empty slice
+	if contains([]string{}, "foo") {
+		t.Error("Expected contains to return false for empty slice")
+	}
+}
+
+func TestIPv4OnlyFiltering(t *testing.T) {
+	addrs := []netip.Addr{
+		netip.MustParseAddr("192.0.2.1"),
+		netip.MustParseAddr("2001:db8::1"),
+		netip.MustParseAddr("192.0.2.2"),
+		netip.MustParseAddr("2001:db8::2"),
+	}
+	
+	v4Only := ipv4Only(addrs)
+	if len(v4Only) != 2 {
+		t.Errorf("Expected 2 IPv4 addresses, got %d", len(v4Only))
+	}
+	
+	for _, addr := range v4Only {
+		if !addr.Is4() {
+			t.Errorf("Expected IPv4 address, got %v", addr)
+		}
+	}
+	
+	// Test empty slice
+	empty := ipv4Only([]netip.Addr{})
+	if len(empty) != 0 {
+		t.Errorf("Expected empty result for empty input, got %d", len(empty))
+	}
+	
+	// Test all IPv6
+	v6addrs := []netip.Addr{
+		netip.MustParseAddr("2001:db8::1"),
+		netip.MustParseAddr("2001:db8::2"),
+	}
+	v4FromV6 := ipv4Only(v6addrs)
+	if len(v4FromV6) != 0 {
+		t.Errorf("Expected 0 IPv4 addresses from IPv6-only input, got %d", len(v4FromV6))
+	}
+}
+
+func TestIPv6OnlyFiltering(t *testing.T) {
+	addrs := []netip.Addr{
+		netip.MustParseAddr("192.0.2.1"),
+		netip.MustParseAddr("2001:db8::1"),
+		netip.MustParseAddr("192.0.2.2"),
+		netip.MustParseAddr("2001:db8::2"),
+	}
+	
+	v6Only := ipv6Only(addrs)
+	if len(v6Only) != 2 {
+		t.Errorf("Expected 2 IPv6 addresses, got %d", len(v6Only))
+	}
+	
+	for _, addr := range v6Only {
+		if !addr.Is6() {
+			t.Errorf("Expected IPv6 address, got %v", addr)
+		}
+	}
+	
+	// Test empty slice
+	empty := ipv6Only([]netip.Addr{})
+	if len(empty) != 0 {
+		t.Errorf("Expected empty result for empty input, got %d", len(empty))
+	}
+	
+	// Test all IPv4
+	v4addrs := []netip.Addr{
+		netip.MustParseAddr("192.0.2.1"),
+		netip.MustParseAddr("192.0.2.2"),
+	}
+	v6FromV4 := ipv6Only(v4addrs)
+	if len(v6FromV4) != 0 {
+		t.Errorf("Expected 0 IPv6 addresses from IPv4-only input, got %d", len(v6FromV4))
+	}
+}
+
+
