@@ -423,11 +423,10 @@ func ipv6Only(addrs []netip.Addr) []netip.Addr {
 func getServiceHostnames(service *core.Service, zone string) []string {
 	var hostnames []string
 
-	// Check annotations
+	// Check annotations with priority: hostnameAnnotationKey first, then externalDnsHostnameAnnotationKey
 	if hostname, ok := service.Annotations[hostnameAnnotationKey]; ok {
 		hostnames = append(hostnames, strings.Split(hostname, ",")...)
-	}
-	if hostname, ok := service.Annotations[externalDnsHostnameAnnotationKey]; ok {
+	} else if hostname, ok := service.Annotations[externalDnsHostnameAnnotationKey]; ok {
 		hostnames = append(hostnames, strings.Split(hostname, ",")...)
 	}
 

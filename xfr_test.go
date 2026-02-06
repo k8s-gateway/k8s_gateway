@@ -274,6 +274,26 @@ func TestGetServiceHostnames(t *testing.T) {
 		}
 	})
 
+	t.Run("with both annotations - priority to hostnameAnnotationKey", func(t *testing.T) {
+		service := &core.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-service",
+				Namespace: "default",
+				Annotations: map[string]string{
+					hostnameAnnotationKey:             "priority.example.com",
+					externalDnsHostnameAnnotationKey: "external.example.com",
+				},
+			},
+		}
+		hostnames := getServiceHostnames(service, "example.com.")
+		if len(hostnames) != 1 {
+			t.Errorf("Expected 1 hostname, got: %d", len(hostnames))
+		}
+		if hostnames[0] != "priority.example.com" {
+			t.Errorf("Expected 'priority.example.com' (from hostnameAnnotationKey), got: %s", hostnames[0])
+		}
+	})
+
 	t.Run("with multiple hostnames", func(t *testing.T) {
 		service := &core.Service{
 			ObjectMeta: metav1.ObjectMeta{
