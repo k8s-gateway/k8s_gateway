@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"time"
+
 	"github.com/coredns/coredns/plugin/pkg/dnsutil"
 	"github.com/coredns/coredns/request"
 
@@ -69,13 +71,19 @@ func (gw *Gateway) soa(state request.Request) *dns.SOA {
 	soa := &dns.SOA{Hdr: header,
 		Mbox:    dnsutil.Join(gw.hostmaster, gw.apex, state.Zone),
 		Ns:      dnsutil.Join(gw.apex, state.Zone),
-		Serial:  12345, // Also dynamic?
+		Serial:  gw.calculateSerial(), // Dynamic serial based on current time
 		Refresh: 7200,
 		Retry:   1800,
 		Expire:  86400,
 		Minttl:  gw.ttlSOA,
 	}
 	return soa
+}
+
+// calculateSerial returns a dynamic SOA serial number based on Unix timestamp.
+// This ensures the serial always increases and is suitable for zone transfers.
+func (gw *Gateway) calculateSerial() uint32 {
+	return uint32(time.Now().Unix())
 }
 
 func (gw *Gateway) nameservers(state request.Request) (result []dns.RR) {
