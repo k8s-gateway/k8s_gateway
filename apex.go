@@ -80,10 +80,27 @@ func (gw *Gateway) soa(state request.Request) *dns.SOA {
 	return soa
 }
 
-// calculateSerial returns a dynamic SOA serial number based on Unix timestamp.
-// This ensures the serial always increases and is suitable for zone transfers.
+// calculateSerial returns a content-driven SOA serial number.
+// The serial only changes when the dirty flag is set, indicating that
+// underlying DNS records have changed. This prevents unnecessary serial
+// increments and makes zone transfers more efficient.
 func (gw *Gateway) calculateSerial() uint32 {
-	return uint32(time.Now().Unix())
+	gw.serialMutex.Lock()
+	defer gw.serialMutex.Unlock()
+
+	if gw.dirty {
+		// Content has changed, generate a new serial
+		// Use Unix timestamp to ensure monotonic increase
+		newSerial := uint32(time.Now().Unix())
+		// Ensure serial always increases
+		if newSerial <= gw.lastSerial {
+			newSerial = gw.lastSerial + 1
+		}
+		gw.lastSerial = newSerial
+		gw.dirty = false
+	}
+
+	return gw.lastSerial
 }
 
 func (gw *Gateway) nameservers(state request.Request) (result []dns.RR) {
