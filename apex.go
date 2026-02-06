@@ -72,9 +72,9 @@ func (gw *Gateway) soa(state request.Request) *dns.SOA {
 		Mbox:    dnsutil.Join(gw.hostmaster, gw.apex, state.Zone),
 		Ns:      dnsutil.Join(gw.apex, state.Zone),
 		Serial:  gw.calculateSerial(), // Dynamic serial based on current time
-		Refresh: 7200,
-		Retry:   1800,
-		Expire:  86400,
+		Refresh: gw.soaRefresh,
+		Retry:   gw.soaRetry,
+		Expire:  gw.soaExpire,
 		Minttl:  gw.ttlSOA,
 	}
 	return soa
