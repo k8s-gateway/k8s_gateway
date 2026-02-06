@@ -59,10 +59,9 @@ type Gateway struct {
 	resourceFilters     ResourceFilters
 
 	// Fields for content-driven SOA serial
-	lastSerial          uint32
-	lastResourceVersion string
-	dirty               bool
-	serialMutex         sync.RWMutex
+	lastSerial  uint32
+	dirty       bool
+	serialMutex sync.RWMutex
 
 	Fall fall.F
 }
