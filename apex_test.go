@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/coredns/coredns/plugin/pkg/dnstest"
 	"github.com/coredns/coredns/plugin/test"
@@ -39,10 +40,124 @@ func TestApex(t *testing.T) {
 		if resp == nil {
 			t.Fatalf("Test %d, got nil message and no error for %q", i, r.Question[0].Name)
 		}
-		if err := test.SortAndCheck(resp, tc); err != nil {
+		
+		// For SOA records, verify the serial is dynamic and reasonable
+		if tc.Qtype == dns.TypeSOA || hasSOAInSection(resp) {
+			if !verifyDynamicSOA(t, resp, i) {
+				continue
+			}
+		}
+		
+		// Use custom verification for tests with SOA records
+		if err := verifySortedResponse(resp, tc); err != nil {
 			t.Errorf("Test number #%d: %+v", i, err)
 		}
 	}
+}
+
+// hasSOAInSection checks if response has SOA in any section
+func hasSOAInSection(msg *dns.Msg) bool {
+	for _, rr := range msg.Answer {
+		if rr.Header().Rrtype == dns.TypeSOA {
+			return true
+		}
+	}
+	for _, rr := range msg.Ns {
+		if rr.Header().Rrtype == dns.TypeSOA {
+			return true
+		}
+	}
+	return false
+}
+
+// verifyDynamicSOA checks that SOA record has reasonable dynamic serial
+func verifyDynamicSOA(t *testing.T, msg *dns.Msg, testNum int) bool {
+	var soa *dns.SOA
+	
+	// Find SOA in answer or authority section
+	for _, rr := range msg.Answer {
+		if s, ok := rr.(*dns.SOA); ok {
+			soa = s
+			break
+		}
+	}
+	if soa == nil {
+		for _, rr := range msg.Ns {
+			if s, ok := rr.(*dns.SOA); ok {
+				soa = s
+				break
+			}
+		}
+	}
+	
+	if soa == nil {
+		return true // No SOA to verify
+	}
+	
+	// Verify serial is reasonable (Unix timestamp)
+	now := uint32(time.Now().Unix())
+	// Allow for some time skew (10 seconds before/after)
+	if soa.Serial < now-10 || soa.Serial > now+10 {
+		t.Errorf("Test %d: SOA serial %d is not close to current time %d", testNum, soa.Serial, now)
+		return false
+	}
+	
+	// Verify other SOA fields
+	if soa.Refresh != 7200 {
+		t.Errorf("Test %d: SOA Refresh should be 7200, got %d", testNum, soa.Refresh)
+		return false
+	}
+	if soa.Retry != 1800 {
+		t.Errorf("Test %d: SOA Retry should be 1800, got %d", testNum, soa.Retry)
+		return false
+	}
+	if soa.Expire != 86400 {
+		t.Errorf("Test %d: SOA Expire should be 86400, got %d", testNum, soa.Expire)
+		return false
+	}
+	
+	return true
+}
+
+// verifySortedResponse is like test.SortAndCheck but ignores SOA serial numbers
+func verifySortedResponse(resp *dns.Msg, tc test.Case) error {
+	// Create a copy of the test case with normalized SOA records
+	normalizedTC := tc
+	normalizedTC.Answer = normalizeSOASerials(tc.Answer)
+	normalizedTC.Ns = normalizeSOASerials(tc.Ns)
+	normalizedTC.Extra = normalizeSOASerials(tc.Extra)
+	
+	// Normalize the response SOA records too
+	respCopy := resp.Copy()
+	respCopy.Answer = normalizeSOASerials(resp.Answer)
+	respCopy.Ns = normalizeSOASerials(resp.Ns)
+	respCopy.Extra = normalizeSOASerials(resp.Extra)
+	
+	return test.SortAndCheck(respCopy, normalizedTC)
+}
+
+// normalizeSOASerials sets all SOA serials to a fixed value for comparison
+func normalizeSOASerials(rrs []dns.RR) []dns.RR {
+	normalized := make([]dns.RR, len(rrs))
+	for i, rr := range rrs {
+		if soa, ok := rr.(*dns.SOA); ok {
+			// Create a copy of the SOA record with serial set to 0
+			soaCopy := &dns.SOA{
+				Hdr:     soa.Hdr,
+				Ns:      soa.Ns,
+				Mbox:    soa.Mbox,
+				Serial:  0, // Set to 0 for comparison
+				Refresh: soa.Refresh,
+				Retry:   soa.Retry,
+				Expire:  soa.Expire,
+				Minttl:  soa.Minttl,
+			}
+			normalized[i] = soaCopy
+		} else {
+			normalized[i] = rr
+		}
+	}
+	return normalized
 }
 
 var testsApex = []test.Case{
@@ -50,7 +165,7 @@ var testsApex = []test.Case{
 		Qname: "example.com.", Qtype: dns.TypeSOA,
 		Rcode: dns.RcodeSuccess,
 		Answer: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 0 7200 1800 86400 5"),
 		},
 	},
 	{
@@ -67,35 +182,35 @@ var testsApex = []test.Case{
 		Qname: "example.com.", Qtype: dns.TypeSRV,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 0 7200 1800 86400 5"),
 		},
 	},
 	{
 		Qname: "example.com.", Qtype: dns.TypeA,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 0 7200 1800 86400 5"),
 		},
 	},
 	{
 		Qname: "dns1.kube-system.example.com.", Qtype: dns.TypeSRV,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 0 7200 1800 86400 5"),
 		},
 	},
 	{
 		Qname: "dns1.kube-system.example.com.", Qtype: dns.TypeNS,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 0 7200 1800 86400 5"),
 		},
 	},
 	{
 		Qname: "dns1.kube-system.example.com.", Qtype: dns.TypeSOA,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 0 7200 1800 86400 5"),
 		},
 	},
 	{
@@ -109,14 +224,14 @@ var testsApex = []test.Case{
 		Qname: "dns1.kube-system.example.com.", Qtype: dns.TypeAAAA,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 0 7200 1800 86400 5"),
 		},
 	},
 	{
 		Qname: "foo.dns1.kube-system.example.com.", Qtype: dns.TypeA,
 		Rcode: dns.RcodeNameError,
 		Ns: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 0 7200 1800 86400 5"),
 		},
 	},
 }
@@ -124,4 +239,39 @@ var testsApex = []test.Case{
 func selfAddressTest(state request.Request) []dns.RR {
 	a := test.A("dns1.kube-system.example.com. IN A 127.0.0.1")
 	return []dns.RR{a}
+}
+
+func TestSOASerialDynamic(t *testing.T) {
+gw := newGateway()
+gw.Zones = []string{"example.com."}
+
+state := request.Request{Zone: "example.com."}
+
+// Get first SOA
+soa1 := gw.soa(state)
+t.Logf("First SOA serial: %d", soa1.Serial)
+
+// Verify serial is reasonable (current Unix timestamp)
+now := uint32(time.Now().Unix())
+if soa1.Serial < now-10 || soa1.Serial > now+10 {
+t.Errorf("SOA serial %d is not close to current time %d", soa1.Serial, now)
+}
+
+// Wait a moment and get second SOA
+time.Sleep(2 * time.Second)
+soa2 := gw.soa(state)
+t.Logf("Second SOA serial: %d", soa2.Serial)
+
+// Verify serial increased
+if soa2.Serial <= soa1.Serial {
+t.Errorf("SOA serial should increase over time: first=%d, second=%d", soa1.Serial, soa2.Serial)
+}
+
+// Verify the difference is approximately the time waited (2 seconds +/- 1 second tolerance)
+diff := soa2.Serial - soa1.Serial
+if diff < 1 || diff > 3 {
+t.Errorf("SOA serial difference should be ~2 seconds, got %d", diff)
+}
+
+t.Logf("Serial increased by %d seconds as expected", diff)
 }
