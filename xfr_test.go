@@ -376,3 +376,91 @@ func TestTransferResourcesEmpty(t *testing.T) {
 		t.Logf("Got %d records from empty controllers (expected 0)", count)
 	}
 }
+
+// TestTransferFunctions tests individual transfer functions with empty controllers
+func TestTransferFunctions(t *testing.T) {
+	ctrl := &KubeController{
+		hasSynced:   true,
+		controllers: []cache.SharedIndexInformer{},
+	}
+
+	gw := newGateway()
+	gw.Zones = []string{"example.com."}
+	gw.Controller = ctrl
+
+	t.Run("transferIngresses", func(t *testing.T) {
+		records := make(map[string][]dns.RR)
+		gw.transferIngresses(records, "example.com.")
+		// Should not panic with empty controllers
+	})
+
+	t.Run("transferServices", func(t *testing.T) {
+		records := make(map[string][]dns.RR)
+		gw.transferServices(records, "example.com.")
+		// Should not panic with empty controllers
+	})
+
+	t.Run("transferHTTPRoutes", func(t *testing.T) {
+		records := make(map[string][]dns.RR)
+		gw.transferHTTPRoutes(records, "example.com.")
+		// Should not panic with empty controllers
+	})
+
+	t.Run("transferTLSRoutes", func(t *testing.T) {
+		records := make(map[string][]dns.RR)
+		gw.transferTLSRoutes(records, "example.com.")
+		// Should not panic with empty controllers
+	})
+
+	t.Run("transferGRPCRoutes", func(t *testing.T) {
+		records := make(map[string][]dns.RR)
+		gw.transferGRPCRoutes(records, "example.com.")
+		// Should not panic with empty controllers
+	})
+
+	t.Run("transferDNSEndpoints", func(t *testing.T) {
+		records := make(map[string][]dns.RR)
+		gw.transferDNSEndpoints(records, "example.com.")
+		// Should not panic with empty controllers
+	})
+}
+
+// TestFindGatewayController tests the findGatewayController helper
+func TestFindGatewayController(t *testing.T) {
+	ctrl := &KubeController{
+		hasSynced:   true,
+		controllers: []cache.SharedIndexInformer{},
+	}
+
+	gw := newGateway()
+	gw.Controller = ctrl
+
+	gwCtrl := gw.findGatewayController()
+	if gwCtrl != nil {
+		t.Error("Expected nil gateway controller with empty controllers")
+	}
+}
+
+// TestAddRecordsHelper tests the addRecords helper function
+func TestAddRecordsHelper(t *testing.T) {
+	records := make(map[string][]dns.RR)
+	
+	rr := &dns.A{
+		Hdr: dns.RR_Header{
+			Name:   "test.example.com.",
+			Rrtype: dns.TypeA,
+			Class:  dns.ClassINET,
+			Ttl:    300,
+		},
+	}
+	
+	addRecords(records, "test.example.com.", []dns.RR{rr})
+	
+	if len(records) != 1 {
+		t.Errorf("Expected 1 entry in records map, got %d", len(records))
+	}
+	
+	if len(records["test.example.com."]) != 1 {
+		t.Errorf("Expected 1 record for test.example.com., got %d", len(records["test.example.com."]))
+	}
+}
