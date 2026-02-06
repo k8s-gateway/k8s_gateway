@@ -9,7 +9,9 @@ The following table lists the configurable parameters of the k8s_gateway chart a
 | Parameter                        | Description                                                                               | Default               |
 | -------------------------------- | ----------------------------------------------------------------------------------------- | --------------------- |
 | `domain`                         | Delegated domain(s)                                                                       |                       |
+| `scheme`                         | Optional scheme for DNS server (e.g., `tls://`, `https://`, `grpc://`) to enable DoT/DoH/gRPC | `""`              |
 | `customLabels`                   | Labels to apply to all resources                                                          | `{}`                  |
+| `podAnnotations`                 | Annotations to apply to pods                                                              | `{}`                  |
 | `watchedResources`               | Resources to watch, e.g. `watchedResources: ["Ingress"]`                                  | `["Ingress", "Service"]`|
 | `filters.ingressClasses`         | Filter Ingress resources by their IngressClassName property                               | `[]`                  |
 | `filters.gatewayClasses`         | Filter Gateway resources by their GatewayClassName property                               | `[]`                  |
@@ -44,3 +46,35 @@ The following table lists the configurable parameters of the k8s_gateway chart a
 | `zoneFiles`                      | Inject few custom zone files                                                              | `[]`                  |
 | `extraVolumes`    | 	Add additional volumes to the workload (e.g., secrets) | `[]` |
 | `extraVolumeMounts`   | Define extra volume mounts for the workload containers (e.g., secrets) | `[]` |
+
+## Examples
+
+### Enabling DNS over TLS (DoT)
+
+To enable DNS over TLS, you need to:
+1. Set the `scheme` parameter to `tls://`
+2. Configure the TLS plugin in `extraZonePlugins` with certificate paths
+3. Mount the TLS certificates using `extraVolumes` and `extraVolumeMounts`
+
+Example values:
+
+```yaml
+domain: "example.com"
+scheme: "tls://"
+
+extraZonePlugins:
+  - name: tls
+    parameters: /etc/coredns/tls/tls.crt /etc/coredns/tls/tls.key
+  # ... other plugins
+
+extraVolumes:
+  - name: tls-certs
+    secret:
+      secretName: coredns-tls-secret
+extraVolumeMounts:
+  - name: tls-certs
+    mountPath: /etc/coredns/tls
+    readOnly: true
+```
+
+For more information, see the [CoreDNS TLS plugin documentation](https://coredns.io/plugins/tls/).

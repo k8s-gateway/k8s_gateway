@@ -21,11 +21,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Check out the code
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
     - name: Build the Docker image
       run: docker build . --file Dockerfile --tag localbuild/testimage:latest
     - name: Run the Anchore Grype scan action
-      uses: anchore/scan-action@v7.2.0
+      uses: anchore/scan-action@v7.3.2
       id: scan
       with:
         image: "localbuild/testimage:latest"

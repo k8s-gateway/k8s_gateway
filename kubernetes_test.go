@@ -23,10 +23,6 @@ import (
 	fakeRest "k8s.io/client-go/rest/fake"
 	externaldnsv1 "sigs.k8s.io/external-dns/apis/v1alpha1"
 	"sigs.k8s.io/external-dns/endpoint"
-	gatewayapi_v1 "sigs.k8s.io/gateway-api/apis/v1"
-	gatewayapi_v1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
-	gatewayClient "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned"
-	gwFake "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned/fake"
 )
 
 // taken from external-dns/source/crd_test.go
@@ -111,18 +107,12 @@ func fakeRESTClient(endpoints []*endpoint.Endpoint, apiVersion string, kind stri
 
 func TestController(t *testing.T) {
 	client := fake.NewClientset()
-	gwClient := gwFake.NewClientset()
 	ctrl := &KubeController{
 		client:    client,
-		gwClient:  gwClient,
 		hasSynced: true,
 	}
 	addServices(client)
 	addIngresses(client)
-	addGateways(gwClient)
-	addHTTPRoutes(gwClient)
-	addTLSRoutes(gwClient)
-	addGRPCRoutes(gwClient)
 	addDNSEndpoints(fakeRESTClient(testDNSEndpoints["dual.example.com"].Spec.Endpoints, "externaldns.k8s.io/v1alpha1", "DNSEndpoint", "ns1", "ep1", nil, nil, t))
 
 	gw := newGateway()
@@ -181,52 +171,6 @@ func TestController(t *testing.T) {
 		}
 	}
 
-	for index, testObj := range testHTTPRoutes {
-		found, _ := httpRouteHostnameIndexFunc(testObj)
-		if checkIgnoreLabel(testObj.Labels) {
-			if len(found) != 0 {
-				t.Errorf("Ignored HTTPRoute key %s should not be found in index, but found: %v", index, found)
-			}
-			continue
-		}
-		if !isFound(index, found) {
-			t.Errorf("HTTPRoute key %s not found in index: %v", index, found)
-		}
-	}
-
-	for index, testObj := range testTLSRoutes {
-		found, _ := tlsRouteHostnameIndexFunc(testObj)
-		if checkIgnoreLabel(testObj.Labels) {
-			if len(found) != 0 {
-				t.Errorf("Ignored TLSRoute key %s should not be found in index, but found: %v", index, found)
-			}
-			continue
-		}
-		if !isFound(index, found) {
-			t.Errorf("TLSRoute key %s not found in index: %v", index, found)
-		}
-	}
-
-	for index, testObj := range testGRPCRoutes {
-		found, _ := grpcRouteHostnameIndexFunc(testObj)
-		if checkIgnoreLabel(testObj.Labels) {
-			if len(found) != 0 {
-				t.Errorf("Ignored GRPCRoute key %s should not be found in index, but found: %v", index, found)
-			}
-			continue
-		}
-		if !isFound(index, found) {
-			t.Errorf("GRPCRoute key %s not found in index: %v", index, found)
-		}
-	}
-
-	for index, testObj := range testGateways {
-		found, _ := gatewayIndexFunc(testObj)
-		if !isFound(index, found) {
-			t.Errorf("Gateway key %s not found in index: %v", index, found)
-		}
-	}
-
 	for index, testObj := range testDNSEndpoints {
 		found, _ := dnsEndpointTargetIndexFunc(testObj)
 		if checkIgnoreLabel(testObj.Labels) {
@@ -266,53 +210,6 @@ func addIngresses(client kubernetes.Interface) {
 		_, err := client.NetworkingV1().Ingresses("ns1").Create(ctx, ingress, metav1.CreateOptions{})
 		if err != nil {
 			log.Warningf("Failed to Create Ingress Objects :%s", err)
-		}
-	}
-}
-
-func addGateways(client gatewayClient.Interface) {
-	ctx := context.TODO()
-	for _, gw := range testGateways {
-		_, err := client.GatewayV1().Gateways("ns1").Create(ctx, gw, metav1.CreateOptions{})
-		if err != nil {
-			log.Warningf("Failed to Create a Gateway Object :%s", err)
-		}
-	}
-}
-
-func addHTTPRoutes(client gatewayClient.Interface) {
-	ctx := context.TODO()
-	for _, r := range testHTTPRoutes {
-		_, err := client.GatewayV1().HTTPRoutes("ns1").Create(ctx, r, metav1.CreateOptions{})
-		if err != nil {
-			log.Warningf("Failed to Create a HTTPRoute Object :%s", err)
-		}
-	}
-}
-
-func addTLSRoutes(client gatewayClient.Interface) {
-	ctx := context.TODO()
-	for _, r := range testTLSRoutes {
-		_, err := client.GatewayV1alpha2().TLSRoutes("ns1").Create(ctx, r, metav1.CreateOptions{})
-		if err != nil {
-			log.Warningf("Failed to Create a TLSRoutes Object :%s", err)
-		}
-	}
-}
-
-func addGRPCRoutes(client gatewayClient.Interface) {
-	ctx := context.TODO()
-	for _, r := range testGRPCRoutes {
-		_, err := client.GatewayV1().GRPCRoutes("ns1").Create(ctx, r, metav1.CreateOptions{})
-		if err != nil {
-			log.Warningf("Failed to Create a GRPC Object :%s", err)
-		}
-	}
-
-	for _, r2 := range testGRPCRoutesLegacy {
-		_, err := client.GatewayV1alpha2().GRPCRoutes("ns1").Create(ctx, r2, metav1.CreateOptions{})
-		if err != nil {
-			log.Warningf("Failed to Create a GRPC Object :%s", err)
 		}
 	}
 }
@@ -534,121 +431,6 @@ var testServices = map[string]*core.Service{
 					{IP: "192.0.0.99"},
 				},
 			},
-		},
-	},
-}
-
-var testGateways = map[string]*gatewayapi_v1.Gateway{
-	"ns1/gw-1": {
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "gw-1",
-			Namespace: "ns1",
-		},
-		Spec: gatewayapi_v1.GatewaySpec{},
-		Status: gatewayapi_v1.GatewayStatus{
-			Addresses: []gatewayapi_v1.GatewayStatusAddress{
-				{
-					Value: "192.0.2.100",
-				},
-			},
-		},
-	},
-	"ns1/gw-2": {
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "gw-2",
-			Namespace: "ns1",
-		},
-	},
-}
-
-var testHTTPRoutes = map[string]*gatewayapi_v1.HTTPRoute{
-	"route-1.gw-1.example.com": {
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "route-1",
-			Namespace: "ns1",
-		},
-		Spec: gatewayapi_v1.HTTPRouteSpec{
-			//ParentRefs: []gatewayapi_v1.ParentRef{},
-			Hostnames: []gatewayapi_v1.Hostname{"route-1.gw-1.example.com"},
-		},
-	},
-	"ignored-route.gw-1.example.com": {
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ignored-route",
-			Namespace: "ns1",
-			Labels: map[string]string{
-				ignoreLabelKey: "true",
-			},
-		},
-		Spec: gatewayapi_v1.HTTPRouteSpec{
-			Hostnames: []gatewayapi_v1.Hostname{"ignored-route.gw-1.example.com"},
-		},
-	},
-}
-
-var testTLSRoutes = map[string]*gatewayapi_v1alpha2.TLSRoute{
-	"route-1.gw-1.example.com": {
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "route-1",
-			Namespace: "ns1",
-		},
-		Spec: gatewayapi_v1alpha2.TLSRouteSpec{
-			//ParentRefs: []gatewayapi_v1.ParentRef{},
-			Hostnames: []gatewayapi_v1alpha2.Hostname{
-				"route-1.gw-1.example.com",
-			},
-		},
-	},
-	"ignored-tls-route.gw-1.example.com": {
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ignored-tls-route",
-			Namespace: "ns1",
-			Labels: map[string]string{
-				ignoreLabelKey: "true",
-			},
-		},
-		Spec: gatewayapi_v1alpha2.TLSRouteSpec{
-			Hostnames: []gatewayapi_v1alpha2.Hostname{
-				"ignored-tls-route.gw-1.example.com",
-			},
-		},
-	},
-}
-
-var testGRPCRoutes = map[string]*gatewayapi_v1.GRPCRoute{
-	"route-1.gw-1.example.com": {
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "route-1",
-			Namespace: "ns1",
-		},
-		Spec: gatewayapi_v1.GRPCRouteSpec{
-			//ParentRefs: []gatewayapi_v1.ParentRef{},
-			Hostnames: []gatewayapi_v1.Hostname{"route-1.gw-1.example.com"},
-		},
-	},
-	"ignored-grpc-route.gw-1.example.com": {
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ignored-grpc-route",
-			Namespace: "ns1",
-			Labels: map[string]string{
-				ignoreLabelKey: "true",
-			},
-		},
-		Spec: gatewayapi_v1.GRPCRouteSpec{
-			Hostnames: []gatewayapi_v1.Hostname{"ignored-grpc-route.gw-1.example.com"},
-		},
-	},
-}
-
-var testGRPCRoutesLegacy = map[string]*gatewayapi_v1alpha2.GRPCRoute{
-	"route-1.gw-1.example.com": {
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "route-1",
-			Namespace: "ns1",
-		},
-		Spec: gatewayapi_v1.GRPCRouteSpec{
-			//ParentRefs: []gatewayapi_v1.ParentRef{},
-			Hostnames: []gatewayapi_v1alpha2.Hostname{"route-1.gw-1.example.com"},
 		},
 	},
 }

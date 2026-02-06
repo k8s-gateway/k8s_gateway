@@ -1,7 +1,7 @@
 image:
   registry: ghcr.io
   repository: k8s-gateway/k8s_gateway
-  tag: 1.6.1
+  tag: 1.6.2
   pullPolicy: IfNotPresent
 
 # Reference to one or more secrets to be used when pulling images.
@@ -15,8 +15,17 @@ imagePullSecrets: []
 # Delegated domain
 domain: ""
 
+# Optional scheme for DNS server (e.g., "tls://", "https://", "grpc://")
+# Used to enable DoT (DNS over TLS), DoH (DNS over HTTPS), or gRPC protocols
+# Leave empty for standard DNS
+# See: https://coredns.io/plugins/tls/
+scheme: ""
+
 # Labels to apply to all resources
 customLabels: {}
+
+# Annotations to apply to pods
+podAnnotations: {}
 
 # TTL for non-apex responses (in seconds)
 ttl: 300
@@ -67,6 +76,13 @@ extraZonePlugins:
   - name: loop
   - name: reload
   - name: loadbalance
+  # Example TLS configuration (requires scheme: "tls://" and TLS certificates)
+  # - name: tls
+  #   parameters: /etc/coredns/tls/tls.crt /etc/coredns/tls/tls.key
+  #   configBlock: |-
+  #     client_auth {
+  #       type request
+  #     }
 
 serviceAccount:
   create: true

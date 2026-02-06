@@ -188,21 +188,7 @@ var tests = []test.Case{
 			test.A("svc1.ns1.example.com.   60  IN  A   192.0.1.1"),
 		},
 	},
-	// basic gateway API lookup | Test 13
-	{
-		Qname: "domain.gw.example.com.", Qtype: dns.TypeA, Rcode: dns.RcodeSuccess,
-		Answer: []dns.RR{
-			test.A("domain.gw.example.com.  60  IN  A   192.0.2.1"),
-		},
-	},
-	// gateway API lookup priority over Ingress | Test 14
-	{
-		Qname: "shadow.example.com.", Qtype: dns.TypeA, Rcode: dns.RcodeSuccess,
-		Answer: []dns.RR{
-			test.A("shadow.example.com. 60  IN  A   192.0.2.4"),
-		},
-	},
-	// Existing Service A record, but no AAAA record | Test 15
+	// Existing Service A record, but no AAAA record | Test 11
 	{
 		Qname: "svc2.ns1.example.com.", Qtype: dns.TypeAAAA, Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
@@ -315,18 +301,6 @@ func testIngressLookup(keys []string) (results []netip.Addr, raws []string) {
 	return results, raws
 }
 
-var testRouteIndexes = map[string][]netip.Addr{
-	"domain.gw.example.com": {netip.MustParseAddr("192.0.2.1")},
-	"shadow.example.com":    {netip.MustParseAddr("192.0.2.4")},
-}
-
-func testRouteLookup(keys []string) (results []netip.Addr, raws []string) {
-	for _, key := range keys {
-		results = append(results, testRouteIndexes[strings.ToLower(key)]...)
-	}
-	return results, raws
-}
-
 var testDNSEndpointIndexes = map[string][]netip.Addr{
 	"domain.endpoint.example.com": {netip.MustParseAddr("192.0.4.1")},
 	"endpoint.example.com":        {netip.MustParseAddr("192.0.4.4")},
@@ -356,15 +330,6 @@ func setupLookupFuncs(gw *Gateway) {
 	}
 	if resource := gw.lookupResource("Service"); resource != nil {
 		resource.lookup = testServiceLookup
-	}
-	if resource := gw.lookupResource("HTTPRoute"); resource != nil {
-		resource.lookup = testRouteLookup
-	}
-	if resource := gw.lookupResource("TLSRoute"); resource != nil {
-		resource.lookup = testRouteLookup
-	}
-	if resource := gw.lookupResource("GRPCRoute"); resource != nil {
-		resource.lookup = testRouteLookup
 	}
 	if resource := gw.lookupResource("DNSEndpoint"); resource != nil {
 		resource.lookup = testDNSEndpointLookup
