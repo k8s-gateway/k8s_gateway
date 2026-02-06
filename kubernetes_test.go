@@ -772,3 +772,375 @@ var testDNSEndpoints = map[string]*externaldnsv1.DNSEndpoint{
 		},
 	},
 }
+
+func TestGatewayIndexFunc(t *testing.T) {
+gw := &gatewayapi_v1.Gateway{
+ObjectMeta: metav1.ObjectMeta{
+Name:      "test-gateway",
+Namespace: "test-ns",
+},
+}
+
+keys, err := gatewayIndexFunc(gw)
+if err != nil {
+t.Fatalf("gatewayIndexFunc failed: %v", err)
+}
+
+expected := "test-ns/test-gateway"
+if len(keys) != 1 || keys[0] != expected {
+t.Errorf("Expected key %s, got %v", expected, keys)
+}
+
+// Test with non-gateway object (should still work if it has metadata)
+svc := &core.Service{
+ObjectMeta: metav1.ObjectMeta{
+Name:      "test-svc",
+Namespace: "default",
+},
+}
+keys2, err := gatewayIndexFunc(svc)
+if err != nil {
+t.Fatalf("gatewayIndexFunc with service failed: %v", err)
+}
+if len(keys2) != 1 || keys2[0] != "default/test-svc" {
+t.Errorf("Expected key default/test-svc, got %v", keys2)
+}
+}
+
+func TestHTTPRouteHostnameIndexFunc(t *testing.T) {
+// Test with valid HTTPRoute
+route := &gatewayapi_v1.HTTPRoute{
+ObjectMeta: metav1.ObjectMeta{
+Name: "test-route",
+},
+Spec: gatewayapi_v1.HTTPRouteSpec{
+Hostnames: []gatewayapi_v1.Hostname{
+"test.example.com",
+"test2.example.com",
+},
+},
+}
+
+hostnames, err := httpRouteHostnameIndexFunc(route)
+if err != nil {
+t.Fatalf("httpRouteHostnameIndexFunc failed: %v", err)
+}
+
+if len(hostnames) != 2 {
+t.Errorf("Expected 2 hostnames, got %d", len(hostnames))
+}
+
+// Test with ignored label
+ignoredRoute := &gatewayapi_v1.HTTPRoute{
+ObjectMeta: metav1.ObjectMeta{
+Name: "ignored-route",
+Labels: map[string]string{
+ignoreLabelKey: "true",
+},
+},
+Spec: gatewayapi_v1.HTTPRouteSpec{
+Hostnames: []gatewayapi_v1.Hostname{"should-be-ignored.example.com"},
+},
+}
+
+hostnames2, err := httpRouteHostnameIndexFunc(ignoredRoute)
+if err != nil {
+t.Fatalf("httpRouteHostnameIndexFunc with ignored route failed: %v", err)
+}
+
+if len(hostnames2) != 0 {
+t.Errorf("Expected 0 hostnames for ignored route, got %d", len(hostnames2))
+}
+
+// Test with wrong type
+wrongType := &core.Service{}
+hostnames3, err := httpRouteHostnameIndexFunc(wrongType)
+if err != nil {
+t.Fatalf("httpRouteHostnameIndexFunc with wrong type failed: %v", err)
+}
+if len(hostnames3) != 0 {
+t.Errorf("Expected 0 hostnames for wrong type, got %d", len(hostnames3))
+}
+}
+
+func TestTLSRouteHostnameIndexFunc(t *testing.T) {
+route := &gatewayapi_v1alpha2.TLSRoute{
+ObjectMeta: metav1.ObjectMeta{
+Name: "tls-route",
+},
+Spec: gatewayapi_v1alpha2.TLSRouteSpec{
+Hostnames: []gatewayapi_v1alpha2.Hostname{
+"tls.example.com",
+},
+},
+}
+
+hostnames, err := tlsRouteHostnameIndexFunc(route)
+if err != nil {
+t.Fatalf("tlsRouteHostnameIndexFunc failed: %v", err)
+}
+
+if len(hostnames) != 1 {
+t.Errorf("Expected 1 hostname, got %d", len(hostnames))
+}
+
+if hostnames[0] != "tls.example.com" {
+t.Errorf("Expected tls.example.com, got %s", hostnames[0])
+}
+}
+
+func TestGRPCRouteHostnameIndexFunc(t *testing.T) {
+route := &gatewayapi_v1.GRPCRoute{
+ObjectMeta: metav1.ObjectMeta{
+Name: "grpc-route",
+},
+Spec: gatewayapi_v1.GRPCRouteSpec{
+Hostnames: []gatewayapi_v1.Hostname{
+"grpc.example.com",
+},
+},
+}
+
+hostnames, err := grpcRouteHostnameIndexFunc(route)
+if err != nil {
+t.Fatalf("grpcRouteHostnameIndexFunc failed: %v", err)
+}
+
+if len(hostnames) != 1 {
+t.Errorf("Expected 1 hostname, got %d", len(hostnames))
+}
+}
+
+func TestIngressHostnameIndexFunc(t *testing.T) {
+ingress := &networking.Ingress{
+ObjectMeta: metav1.ObjectMeta{
+Name: "test-ingress",
+},
+Spec: networking.IngressSpec{
+Rules: []networking.IngressRule{
+{Host: "host1.example.com"},
+{Host: "host2.example.com"},
+},
+},
+}
+
+hostnames, err := ingressHostnameIndexFunc(ingress)
+if err != nil {
+t.Fatalf("ingressHostnameIndexFunc failed: %v", err)
+}
+
+if len(hostnames) != 2 {
+t.Errorf("Expected 2 hostnames, got %d", len(hostnames))
+}
+}
+
+func TestServiceHostnameIndexFunc(t *testing.T) {
+// Test with hostname annotation
+svc := &core.Service{
+ObjectMeta: metav1.ObjectMeta{
+Name:      "test-svc",
+Namespace: "default",
+Annotations: map[string]string{
+hostnameAnnotationKey: "custom.example.com",
+},
+},
+Spec: core.ServiceSpec{
+Type: core.ServiceTypeLoadBalancer,
+},
+}
+
+hostnames, err := serviceHostnameIndexFunc(svc)
+if err != nil {
+t.Fatalf("serviceHostnameIndexFunc failed: %v", err)
+}
+
+if len(hostnames) != 1 || hostnames[0] != "custom.example.com" {
+t.Errorf("Expected custom.example.com, got %v", hostnames)
+}
+
+// Test with default hostname
+svc2 := &core.Service{
+ObjectMeta: metav1.ObjectMeta{
+Name:      "default-svc",
+Namespace: "ns1",
+},
+Spec: core.ServiceSpec{
+Type: core.ServiceTypeLoadBalancer,
+},
+}
+
+hostnames2, err := serviceHostnameIndexFunc(svc2)
+if err != nil {
+t.Fatalf("serviceHostnameIndexFunc with default failed: %v", err)
+}
+
+if len(hostnames2) != 1 || hostnames2[0] != "default-svc.ns1" {
+t.Errorf("Expected default-svc.ns1, got %v", hostnames2)
+}
+
+// Test with non-LoadBalancer service
+svc3 := &core.Service{
+ObjectMeta: metav1.ObjectMeta{
+Name:      "cluster-svc",
+Namespace: "default",
+},
+Spec: core.ServiceSpec{
+Type: core.ServiceTypeClusterIP,
+},
+}
+
+hostnames3, err := serviceHostnameIndexFunc(svc3)
+if err != nil {
+t.Fatalf("serviceHostnameIndexFunc with ClusterIP failed: %v", err)
+}
+
+if len(hostnames3) != 0 {
+t.Errorf("Expected 0 hostnames for ClusterIP service, got %d", len(hostnames3))
+}
+}
+
+func TestDNSEndpointTargetIndexFunc(t *testing.T) {
+ep := &externaldnsv1.DNSEndpoint{
+ObjectMeta: metav1.ObjectMeta{
+Name: "test-ep",
+},
+Spec: externaldnsv1.DNSEndpointSpec{
+Endpoints: []*endpoint.Endpoint{
+{DNSName: "ep1.example.com"},
+{DNSName: "ep2.example.com"},
+},
+},
+}
+
+hostnames, err := dnsEndpointTargetIndexFunc(ep)
+if err != nil {
+t.Fatalf("dnsEndpointTargetIndexFunc failed: %v", err)
+}
+
+if len(hostnames) != 2 {
+t.Errorf("Expected 2 hostnames, got %d", len(hostnames))
+}
+}
+
+func TestSplitHostnameAnnotation(t *testing.T) {
+tests := []struct {
+input    string
+expected []string
+}{
+{"host1.example.com", []string{"host1.example.com"}},
+{"host1.example.com,host2.example.com", []string{"host1.example.com", "host2.example.com"}},
+{"host1.example.com, host2.example.com", []string{"host1.example.com", "host2.example.com"}},
+{"host1.example.com , host2.example.com , host3.example.com", []string{"host1.example.com", "host2.example.com", "host3.example.com"}},
+}
+
+for _, test := range tests {
+result := splitHostnameAnnotation(test.input)
+if len(result) != len(test.expected) {
+t.Errorf("For input %s, expected %d results, got %d", test.input, len(test.expected), len(result))
+continue
+}
+for i, expected := range test.expected {
+if result[i] != expected {
+t.Errorf("For input %s, expected result[%d]=%s, got %s", test.input, i, expected, result[i])
+}
+}
+}
+}
+
+func TestCheckServiceAnnotations(t *testing.T) {
+svc := &core.Service{
+ObjectMeta: metav1.ObjectMeta{
+Annotations: map[string]string{
+hostnameAnnotationKey:            "primary.example.com",
+externalDnsHostnameAnnotationKey: "fallback.example.com",
+},
+},
+}
+
+// Should return first annotation
+value, exists := checkServiceAnnotations(svc, hostnameAnnotationKey, externalDnsHostnameAnnotationKey)
+if !exists {
+t.Error("Expected annotation to exist")
+}
+if value != "primary.example.com" {
+t.Errorf("Expected primary.example.com, got %s", value)
+}
+
+// Test with only second annotation
+svc2 := &core.Service{
+ObjectMeta: metav1.ObjectMeta{
+Annotations: map[string]string{
+externalDnsHostnameAnnotationKey: "fallback.example.com",
+},
+},
+}
+
+value2, exists2 := checkServiceAnnotations(svc2, hostnameAnnotationKey, externalDnsHostnameAnnotationKey)
+if !exists2 {
+t.Error("Expected annotation to exist")
+}
+if value2 != "fallback.example.com" {
+t.Errorf("Expected fallback.example.com, got %s", value2)
+}
+
+// Test with no annotations
+svc3 := &core.Service{
+ObjectMeta: metav1.ObjectMeta{},
+}
+
+_, exists3 := checkServiceAnnotations(svc3, hostnameAnnotationKey, externalDnsHostnameAnnotationKey)
+if exists3 {
+t.Error("Expected annotation to not exist")
+}
+}
+
+func TestCheckDomainValid(t *testing.T) {
+tests := []struct {
+domain   string
+expected bool
+}{
+{"example.com", true},
+{"test.example.com", true},
+{"*.example.com", true},
+{"valid-hostname.example.com", true},
+{"", false},
+{"invalid_underscore.example.com", false},
+{strings.Repeat("a", 256) + ".com", false}, // Too long
+}
+
+for _, test := range tests {
+result := checkDomainValid(test.domain)
+if result != test.expected {
+t.Errorf("For domain %s, expected %v, got %v", test.domain, test.expected, result)
+}
+}
+}
+
+func TestCheckIgnoreLabel(t *testing.T) {
+// Test with ignore label set to true
+labels1 := map[string]string{
+ignoreLabelKey: "true",
+}
+if !checkIgnoreLabel(labels1) {
+t.Error("Expected true for ignore label = true")
+}
+
+// Test with ignore label set to false
+labels2 := map[string]string{
+ignoreLabelKey: "false",
+}
+if checkIgnoreLabel(labels2) {
+t.Error("Expected false for ignore label = false")
+}
+
+// Test with no ignore label
+labels3 := map[string]string{}
+if checkIgnoreLabel(labels3) {
+t.Error("Expected false for no ignore label")
+}
+
+// Test with nil labels
+if checkIgnoreLabel(nil) {
+t.Error("Expected false for nil labels")
+}
+}
