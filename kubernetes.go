@@ -86,6 +86,12 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 			defaultResyncPeriod,
 			cache.Indexers{gatewayUniqueIndex: gatewayIndexFunc},
 		)
+		// Add event handlers to mark gateway as dirty when resources change
+		gatewayController.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    func(obj interface{}) { originalGateway.markDirty() },
+			UpdateFunc: func(oldObj, newObj interface{}) { originalGateway.markDirty() },
+			DeleteFunc: func(obj interface{}) { originalGateway.markDirty() },
+		})
 		ctrl.controllers = append(ctrl.controllers, gatewayController)
 		log.Infof("GatewayAPI controller initialized")
 
@@ -126,6 +132,12 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 						defaultResyncPeriod,
 						cache.Indexers{ingressHostnameIndex: ingressHostnameIndexFunc},
 					)
+					// Add event handlers to mark gateway as dirty when resources change
+					ingressController.AddEventHandler(cache.ResourceEventHandlerFuncs{
+						AddFunc:    func(obj interface{}) { originalGateway.markDirty() },
+						UpdateFunc: func(oldObj, newObj interface{}) { originalGateway.markDirty() },
+						DeleteFunc: func(obj interface{}) { originalGateway.markDirty() },
+					})
 					resource.lookup = lookupIngressIndex(ingressController, originalGateway.resourceFilters.ingressClasses)
 					ctrl.controllers = append(ctrl.controllers, ingressController)
 					log.Infof("Ingress controller initialized")
@@ -140,6 +152,12 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 						defaultResyncPeriod,
 						cache.Indexers{serviceHostnameIndex: serviceHostnameIndexFunc},
 					)
+					// Add event handlers to mark gateway as dirty when resources change
+					serviceController.AddEventHandler(cache.ResourceEventHandlerFuncs{
+						AddFunc:    func(obj interface{}) { originalGateway.markDirty() },
+						UpdateFunc: func(oldObj, newObj interface{}) { originalGateway.markDirty() },
+						DeleteFunc: func(obj interface{}) { originalGateway.markDirty() },
+					})
 					resource.lookup = lookupServiceIndex(serviceController)
 					ctrl.controllers = append(ctrl.controllers, serviceController)
 					log.Infof("Service controller initialized")
@@ -159,6 +177,12 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 				defaultResyncPeriod,
 				cache.Indexers{externalDNSHostnameIndex: dnsEndpointTargetIndexFunc},
 			)
+			// Add event handlers to mark gateway as dirty when resources change
+			dnsEndpointController.AddEventHandler(cache.ResourceEventHandlerFuncs{
+				AddFunc:    func(obj interface{}) { originalGateway.markDirty() },
+				UpdateFunc: func(oldObj, newObj interface{}) { originalGateway.markDirty() },
+				DeleteFunc: func(obj interface{}) { originalGateway.markDirty() },
+			})
 			resource.lookup = lookupDNSEndpoint(dnsEndpointController)
 			ctrl.controllers = append(ctrl.controllers, dnsEndpointController)
 			log.Infof("DNSEndpoint controller initialized")
@@ -178,6 +202,12 @@ func initializeHTTPRouteController(ctx context.Context, ctrl *KubeController, ga
 		defaultResyncPeriod,
 		cache.Indexers{httpRouteHostnameIndex: httpRouteHostnameIndexFunc},
 	)
+	// Add event handlers to mark gateway as dirty when resources change
+	httpRouteController.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    func(obj interface{}) { originalGateway.markDirty() },
+		UpdateFunc: func(oldObj, newObj interface{}) { originalGateway.markDirty() },
+		DeleteFunc: func(obj interface{}) { originalGateway.markDirty() },
+	})
 	originalGateway.lookupResource("HTTPRoute").lookup = lookupHttpRouteIndex(
 		httpRouteController,
 		gatewayController,
@@ -196,6 +226,12 @@ func initializeTLSRouteController(ctx context.Context, ctrl *KubeController, gat
 		defaultResyncPeriod,
 		cache.Indexers{tlsRouteHostnameIndex: tlsRouteHostnameIndexFunc},
 	)
+	// Add event handlers to mark gateway as dirty when resources change
+	tlsRouteController.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    func(obj interface{}) { originalGateway.markDirty() },
+		UpdateFunc: func(oldObj, newObj interface{}) { originalGateway.markDirty() },
+		DeleteFunc: func(obj interface{}) { originalGateway.markDirty() },
+	})
 	originalGateway.lookupResource("TLSRoute").lookup = lookupTLSRouteIndex(
 		tlsRouteController,
 		gatewaycontroller,
@@ -214,6 +250,12 @@ func initializeGRPCRouteController(ctx context.Context, ctrl *KubeController, ga
 		defaultResyncPeriod,
 		cache.Indexers{grpcRouteHostnameIndex: grpcRouteHostnameIndexFunc},
 	)
+	// Add event handlers to mark gateway as dirty when resources change
+	grpcRouteController.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    func(obj interface{}) { originalGateway.markDirty() },
+		UpdateFunc: func(oldObj, newObj interface{}) { originalGateway.markDirty() },
+		DeleteFunc: func(obj interface{}) { originalGateway.markDirty() },
+	})
 	originalGateway.lookupResource("GRPCRoute").lookup = lookupGRPCRouteIndex(
 		grpcRouteController,
 		gatewayController,

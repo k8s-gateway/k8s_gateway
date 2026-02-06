@@ -148,12 +148,13 @@ func (gw *Gateway) transferIngresses(records map[string][]dns.RR, zone string) {
 					continue
 				}
 
-				hostname := strings.ToLower(rule.Host)
-				if !strings.HasSuffix(hostname, zone) {
+				// Normalize hostname to FQDN for proper zone matching
+				fqdn := dns.Fqdn(strings.ToLower(rule.Host))
+				// Use dns.IsSubDomain to properly match zone with trailing dot
+				if !dns.IsSubDomain(zone, fqdn) {
 					continue
 				}
 
-				fqdn := dns.Fqdn(hostname)
 				addRecords(records, fqdn, gw.A(fqdn, ipv4Only(addrs)))
 				addRecords(records, fqdn, gw.AAAA(fqdn, ipv6Only(addrs)))
 			}
@@ -201,11 +202,13 @@ func (gw *Gateway) transferServices(records map[string][]dns.RR, zone string) {
 			// Generate hostname from annotations or default
 			hostnames := getServiceHostnames(service, zone)
 			for _, hostname := range hostnames {
-				if !strings.HasSuffix(hostname, zone) {
+				// Normalize hostname to FQDN for proper zone matching
+				fqdn := dns.Fqdn(strings.ToLower(hostname))
+				// Use dns.IsSubDomain to properly match zone with trailing dot
+				if !dns.IsSubDomain(zone, fqdn) {
 					continue
 				}
 
-				fqdn := dns.Fqdn(hostname)
 				addRecords(records, fqdn, gw.A(fqdn, ipv4Only(addrs)))
 				addRecords(records, fqdn, gw.AAAA(fqdn, ipv6Only(addrs)))
 			}
@@ -249,12 +252,13 @@ func (gw *Gateway) transferRouteResources(records map[string][]dns.RR, zone stri
 
 	// Generate records for each hostname
 	for _, hostname := range route.hostnames {
-		hostnameStr := strings.ToLower(string(hostname))
-		if !strings.HasSuffix(hostnameStr, zone) {
+		// Normalize hostname to FQDN for proper zone matching
+		fqdn := dns.Fqdn(strings.ToLower(string(hostname)))
+		// Use dns.IsSubDomain to properly match zone with trailing dot
+		if !dns.IsSubDomain(zone, fqdn) {
 			continue
 		}
 
-		fqdn := dns.Fqdn(hostnameStr)
 		addRecords(records, fqdn, gw.A(fqdn, ipv4Only(addrs)))
 		addRecords(records, fqdn, gw.AAAA(fqdn, ipv6Only(addrs)))
 	}
@@ -357,12 +361,12 @@ func (gw *Gateway) transferDNSEndpoints(records map[string][]dns.RR, zone string
 			}
 
 			for _, endpoint := range dnsEndpoint.Spec.Endpoints {
-				hostname := strings.ToLower(endpoint.DNSName)
-				if !strings.HasSuffix(hostname, zone) {
+				// Normalize hostname to FQDN for proper zone matching
+				fqdn := dns.Fqdn(strings.ToLower(endpoint.DNSName))
+				// Use dns.IsSubDomain to properly match zone with trailing dot
+				if !dns.IsSubDomain(zone, fqdn) {
 					continue
 				}
-
-				fqdn := dns.Fqdn(hostname)
 
 				switch endpoint.RecordType {
 				case "A", "AAAA":

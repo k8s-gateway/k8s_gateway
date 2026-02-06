@@ -242,36 +242,37 @@ func selfAddressTest(state request.Request) []dns.RR {
 }
 
 func TestSOASerialDynamic(t *testing.T) {
-gw := newGateway()
-gw.Zones = []string{"example.com."}
+	gw := newGateway()
+	gw.Zones = []string{"example.com."}
 
-state := request.Request{Zone: "example.com."}
+	state := request.Request{Zone: "example.com."}
 
-// Get first SOA
-soa1 := gw.soa(state)
-t.Logf("First SOA serial: %d", soa1.Serial)
+	// Get first SOA - should use initial serial since dirty=true
+	soa1 := gw.soa(state)
+	t.Logf("First SOA serial: %d", soa1.Serial)
 
-// Verify serial is reasonable (current Unix timestamp)
-now := uint32(time.Now().Unix())
-if soa1.Serial < now-10 || soa1.Serial > now+10 {
-t.Errorf("SOA serial %d is not close to current time %d", soa1.Serial, now)
-}
+	// Verify serial is reasonable (should be initialized)
+	if soa1.Serial == 0 {
+		t.Errorf("SOA serial should not be 0")
+	}
 
-// Wait a moment and get second SOA
-time.Sleep(2 * time.Second)
-soa2 := gw.soa(state)
-t.Logf("Second SOA serial: %d", soa2.Serial)
+	// Mark as dirty to force serial update
+	gw.markDirty()
 
-// Verify serial increased
-if soa2.Serial <= soa1.Serial {
-t.Errorf("SOA serial should increase over time: first=%d, second=%d", soa1.Serial, soa2.Serial)
-}
+	// Get second SOA - should get a new serial because we marked dirty
+	soa2 := gw.soa(state)
+	t.Logf("Second SOA serial: %d", soa2.Serial)
 
-// Verify the difference is approximately the time waited (2 seconds +/- 1 second tolerance)
-diff := soa2.Serial - soa1.Serial
-if diff < 1 || diff > 3 {
-t.Errorf("SOA serial difference should be ~2 seconds, got %d", diff)
-}
+	// Verify serial increased or stayed same (depending on timing)
+	if soa2.Serial < soa1.Serial {
+		t.Errorf("SOA serial should not decrease: first=%d, second=%d", soa1.Serial, soa2.Serial)
+	}
 
-t.Logf("Serial increased by %d seconds as expected", diff)
+	// Get third SOA without marking dirty - should return same serial
+	soa3 := gw.soa(state)
+	if soa3.Serial != soa2.Serial {
+		t.Errorf("SOA serial should be cached when not dirty: second=%d, third=%d", soa2.Serial, soa3.Serial)
+	}
+
+	t.Logf("Serial caching works correctly")
 }

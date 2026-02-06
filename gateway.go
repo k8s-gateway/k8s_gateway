@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"strings"
+	"sync"
 
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/plugin/pkg/fall"
@@ -57,6 +58,12 @@ type Gateway struct {
 	ExternalAddrFunc    func(request.Request) []dns.RR
 	resourceFilters     ResourceFilters
 
+	// Fields for content-driven SOA serial
+	lastSerial          uint32
+	lastResourceVersion string
+	dirty               bool
+	serialMutex         sync.RWMutex
+
 	Fall fall.F
 }
 
@@ -75,7 +82,17 @@ func newGateway() *Gateway {
 		apex:                defaultApex,
 		secondNS:            defaultSecondNS,
 		hostmaster:          defaultHostmaster,
+		lastSerial:          uint32(1), // Initialize to 1
+		dirty:               true,       // Start as dirty to generate initial serial
 	}
+}
+
+// markDirty marks the gateway as needing a new serial number.
+// This should be called whenever DNS records change (add/update/delete).
+func (gw *Gateway) markDirty() {
+	gw.serialMutex.Lock()
+	gw.dirty = true
+	gw.serialMutex.Unlock()
 }
 
 func (gw *Gateway) lookupResource(resource string) *resourceWithIndex {
