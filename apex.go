@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"time"
+
 	"github.com/coredns/coredns/plugin/pkg/dnsutil"
 	"github.com/coredns/coredns/request"
 
@@ -69,13 +71,36 @@ func (gw *Gateway) soa(state request.Request) *dns.SOA {
 	soa := &dns.SOA{Hdr: header,
 		Mbox:    dnsutil.Join(gw.hostmaster, gw.apex, state.Zone),
 		Ns:      dnsutil.Join(gw.apex, state.Zone),
-		Serial:  12345, // Also dynamic?
-		Refresh: 7200,
-		Retry:   1800,
-		Expire:  86400,
+		Serial:  gw.calculateSerial(), // Dynamic serial based on current time
+		Refresh: gw.soaRefresh,
+		Retry:   gw.soaRetry,
+		Expire:  gw.soaExpire,
 		Minttl:  gw.ttlSOA,
 	}
 	return soa
+}
+
+// calculateSerial returns a content-driven SOA serial number.
+// The serial only changes when the dirty flag is set, indicating that
+// underlying DNS records have changed. This prevents unnecessary serial
+// increments and makes zone transfers more efficient.
+func (gw *Gateway) calculateSerial() uint32 {
+	gw.serialMutex.Lock()
+	defer gw.serialMutex.Unlock()
+
+	if gw.dirty {
+		// Content has changed, generate a new serial
+		// Use Unix timestamp to ensure monotonic increase
+		newSerial := uint32(time.Now().Unix())
+		// Ensure serial always increases
+		if newSerial <= gw.lastSerial {
+			newSerial = gw.lastSerial + 1
+		}
+		gw.lastSerial = newSerial
+		gw.dirty = false
+	}
+
+	return gw.lastSerial
 }
 
 func (gw *Gateway) nameservers(state request.Request) (result []dns.RR) {
