@@ -58,7 +58,16 @@ func TestDualNS(t *testing.T) {
 		if resp == nil {
 			t.Fatalf("Test %d, got nil message and no error for %q", i, r.Question[0].Name)
 		}
-		if err := test.SortAndCheck(resp, tc); err != nil {
+		
+		// For SOA records, verify the serial is dynamic and reasonable
+		if tc.Qtype == dns.TypeSOA || hasSOAInSection(resp) {
+			if !verifyDynamicSOA(t, resp, i) {
+				continue
+			}
+		}
+		
+		// Use custom verification for tests with SOA records
+		if err := verifySortedResponse(resp, tc); err != nil {
 			t.Errorf("Test number #%d: %+v", i, err)
 		}
 	}
@@ -69,7 +78,7 @@ var testsDualNS = []test.Case{
 		Qname: "example.com.", Qtype: dns.TypeSOA,
 		Rcode: dns.RcodeSuccess,
 		Answer: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 0 7200 1800 86400 5"),
 		},
 	},
 	{
@@ -88,42 +97,42 @@ var testsDualNS = []test.Case{
 		Qname: "example.com.", Qtype: dns.TypeSRV,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 0 7200 1800 86400 5"),
 		},
 	},
 	{
 		Qname: "example.com.", Qtype: dns.TypeA,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 0 7200 1800 86400 5"),
 		},
 	},
 	{
 		Qname: "dns1.kube-system.example.com.", Qtype: dns.TypeSRV,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 0 7200 1800 86400 5"),
 		},
 	},
 	{
 		Qname: "dns1.kube-system.example.com.", Qtype: dns.TypeNS,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 0 7200 1800 86400 5"),
 		},
 	},
 	{
 		Qname: "dns1.kube-system.example.com.", Qtype: dns.TypeSOA,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 0 7200 1800 86400 5"),
 		},
 	},
 	{
 		Qname: "dns1.kube-system.example.com.", Qtype: dns.TypeAAAA,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 0 7200 1800 86400 5"),
 		},
 	},
 	{
@@ -137,7 +146,7 @@ var testsDualNS = []test.Case{
 		Qname: "foo.dns1.kube-system.example.com.", Qtype: dns.TypeA,
 		Rcode: dns.RcodeNameError,
 		Ns: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 0 7200 1800 86400 5"),
 		},
 	},
 }

@@ -17,6 +17,7 @@ on:
 permissions:
   contents: read
   packages: write
+  pull-requests: write
 
 jobs:
   build:
@@ -33,10 +34,10 @@ jobs:
       amd64: ${{ steps.digest.outputs.amd64 }}
       arm64: ${{ steps.digest.outputs.arm64 }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v5
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -46,7 +47,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build Meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
         id: meta
         env:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
@@ -63,6 +64,9 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
             echo "type=type=image,name=ghcr.io/${{ github.repository_owner }}/k8s_gateway,push-by-digest=true,name-canonical=true,push=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "type=type=image,name=ttl.sh/k8s-gateway-pr${{ github.event.pull_request.number }},push=true" >> $GITHUB_OUTPUT
+            echo "tags=ttl.sh/k8s-gateway-pr${{ github.event.pull_request.number }}:24h-${{ matrix.platform }}" >> $GITHUB_OUTPUT
           else
             echo "type=type=docker" >> $GITHUB_OUTPUT
           fi
@@ -92,6 +96,41 @@ jobs:
         run: |
           echo "${{ matrix.platform }}=${{ steps.build.outputs.digest }}" >> "${GITHUB_OUTPUT}"
 
+  release-pr:
+    if: ${{ github.event_name == 'pull_request' }}
+    needs: build
+    name: PR release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Login to ttl.sh
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ttl.sh
+          username: anonymous
+          password: anonymous
+
+      - name: Push Images
+        id: push
+        uses: Noelware/docker-manifest-action@v1
+        with:
+          tags: ttl.sh/k8s-gateway-pr${{ github.event.pull_request.number }}:24h
+          inputs: >-
+            ttl.sh/k8s-gateway-pr${{ github.event.pull_request.number }}@${{ needs.build.outputs.arm64 }},
+            ttl.sh/k8s-gateway-pr${{ github.event.pull_request.number }}@${{ needs.build.outputs.amd64 }}
+          push: true
+
+      - name: Comment PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🐳 **Docker image published to ttl.sh (24 hour TTL)**\n\n`ttl.sh/k8s-gateway-pr${{ github.event.pull_request.number }}:24h`'
+            })
+      
+
   release:
     if: ${{ github.event_name == 'release' }}
     needs: build
@@ -99,17 +138,17 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
         id: meta
         env:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index

@@ -119,6 +119,41 @@ func parse(c *caddy.Controller) (*Gateway, error) {
 					return nil, c.Errf("Incorrectly formatted 'gatewayClasses' parameter")
 				}
 				gw.resourceFilters.gatewayClasses = args
+		case "soa":
+			// Parse SOA timing values: soa <refresh> <retry> <expire>
+			args := c.RemainingArgs()
+			if len(args) != 3 {
+				return nil, c.Errf("soa requires exactly 3 arguments: refresh retry expire")
+			}
+			
+			refresh, err := strconv.Atoi(args[0])
+			if err != nil {
+				return nil, c.Errf("invalid refresh value: %v", err)
+			}
+			if refresh < 0 {
+				return nil, c.Errf("refresh must be non-negative: %d", refresh)
+			}
+			
+			retry, err := strconv.Atoi(args[1])
+			if err != nil {
+				return nil, c.Errf("invalid retry value: %v", err)
+			}
+			if retry < 0 {
+				return nil, c.Errf("retry must be non-negative: %d", retry)
+			}
+			
+			expire, err := strconv.Atoi(args[2])
+			if err != nil {
+				return nil, c.Errf("invalid expire value: %v", err)
+			}
+			if expire < 0 {
+				return nil, c.Errf("expire must be non-negative: %d", expire)
+			}
+			
+			gw.soaRefresh = uint32(refresh)
+			gw.soaRetry = uint32(retry)
+			gw.soaExpire = uint32(expire)
+
 
 			default:
 				return nil, c.Errf("Unknown property '%s'", c.Val())
