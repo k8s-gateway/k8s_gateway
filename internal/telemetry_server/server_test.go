@@ -1,4 +1,4 @@
-package main
+package telemetry_server
 
 import (
 	"bytes"
@@ -60,7 +60,6 @@ func TestHandleUsage_OK(t *testing.T) {
 	if !rec.InCluster {
 		t.Error("InCluster: want true, got false")
 	}
-	// ReceivedAt should be a sensible server-assigned time.
 	if rec.ReceivedAt.Before(before.Add(-time.Second)) || rec.ReceivedAt.After(after.Add(time.Second)) {
 		t.Errorf("ReceivedAt %v is outside expected range [%v, %v]", rec.ReceivedAt, before, after)
 	}
@@ -120,7 +119,6 @@ func TestHandleUsage_OversizedBody(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
-	// Build a body larger than maxBodyBytes.
 	large := `{"plugin_version":"v1","kubernetes_version":"` + strings.Repeat("x", maxBodyBytes) + `","resources":[],"in_cluster":false}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/usage", strings.NewReader(large))
 	req.Header.Set("Content-Type", "application/json")
@@ -158,7 +156,7 @@ func TestHandleUsage_NoIPInOutput(t *testing.T) {
 	body := `{"plugin_version":"v0.4.0","resources":[],"in_cluster":false}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/usage", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.RemoteAddr = "203.0.113.42:12345" // simulated client IP
+	req.RemoteAddr = "203.0.113.42:12345"
 	rr := httptest.NewRecorder()
 
 	mux.ServeHTTP(rr, req)
@@ -166,7 +164,6 @@ func TestHandleUsage_NoIPInOutput(t *testing.T) {
 	if rr.Code != http.StatusAccepted {
 		t.Fatalf("unexpected status %d", rr.Code)
 	}
-	// The output record must not contain the IP address in any form.
 	if strings.Contains(buf.String(), "203.0.113.42") {
 		t.Error("output record contains client IP address — PII must not be stored")
 	}

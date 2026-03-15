@@ -1,32 +1,11 @@
-// Package main is the k8s_gateway telemetry ingest server.
-//
-// It accepts the anonymous usage reports sent by the k8s_gateway plugin and
-// writes them as newline-delimited JSON (NDJSON) to stdout so they can be
-// consumed by any downstream pipeline (log shipper, object storage, etc.).
-//
-// # Usage
-//
-//	telemetry-server [-addr :8080]
-//
-// # Endpoints
-//
-//	POST /v1/usage   — ingest a usage report (see UsageRecord)
-//	GET  /healthz    — liveness probe, always returns 200 OK
-//
-// # Privacy
-//
-// No IP addresses or other PII are stored. The server only records the fields
-// present in the request body plus a server-side received_at timestamp.
-package main
+package telemetry_server
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"time"
 )
 
@@ -78,14 +57,12 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 
 // handleUsage processes an incoming usage report.
 func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
-	// Enforce content-type to avoid processing non-JSON bodies.
 	ct := r.Header.Get("Content-Type")
 	if ct != "application/json" {
 		http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
 		return
 	}
 
-	// Guard against oversized bodies.
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
 	var payload UsagePayload
@@ -96,8 +73,6 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// plugin_version is the only mandatory field; everything else is
-	// best-effort and may legitimately be absent.
 	if payload.PluginVersion == "" {
 		http.Error(w, "plugin_version is required", http.StatusBadRequest)
 		return
@@ -123,19 +98,5 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 // handleHealthz is a simple liveness probe.
 func handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintln(w, "ok")
-}
-
-func main() {
-	addr := flag.String("addr", ":8080", "TCP address to listen on")
-	flag.Parse()
-
-	srv := NewServer(os.Stdout)
-	mux := http.NewServeMux()
-	srv.RegisterRoutes(mux)
-
-	log.Printf("telemetry-server listening on %s", *addr)
-	if err := http.ListenAndServe(*addr, mux); err != nil {
-		log.Fatalf("server error: %v", err)
-	}
+	_, _ = fmt.Fprintln(w, "ok")
 }

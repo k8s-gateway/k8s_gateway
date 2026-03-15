@@ -12,7 +12,7 @@ const (
 	// TelemetryEndpoint is the URL where anonymous usage data is sent.
 	// See the "Telemetry" section of the README for the full list of fields
 	// that are collected and how to opt out.
-	TelemetryEndpoint = "https://telemetry.k8s-gateway.dev/v1/usage"
+	TelemetryEndpoint = "https://telemetry.k8s-gw.skylab.fi/api/v1/usage"
 
 	telemetryTimeout = 10 * time.Second
 )

@@ -238,7 +238,7 @@ zone.example.com (NS record) -> exdns-2-k8s-gateway.zone.example.com (A record) 
 The data is sent as a single HTTP POST request with a JSON body to:
 
 ```
-https://telemetry.k8s-gateway.dev/v1/usage
+https://telemetry.k8s-gw.skylab.fi/api/v1/usage
 ```
 
 The payload is also written to the CoreDNS log at `INFO` level at startup so it is always visible regardless of whether remote reporting is enabled.
