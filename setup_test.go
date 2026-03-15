@@ -42,19 +42,29 @@ func TestSetup(t *testing.T) {
 
 func TestSetupSentry(t *testing.T) {
 	tests := []struct {
-		name           string
-		input          string
-		shouldErr      bool
-		expectedDSN    string
+		name        string
+		input       string
+		shouldErr   bool
+		expectedDSN string
 	}{
 		{
-			name:        "no sentry directive",
+			// When no sentry directive is given the default project DSN is used,
+			// so error reporting is on out-of-the-box.
+			name:        "no sentry directive uses default DSN",
 			input:       `k8s_gateway example.org`,
+			shouldErr:   false,
+			expectedDSN: defaultSentryDSN,
+		},
+		{
+			name: "sentry off disables reporting",
+			input: `k8s_gateway example.org {
+  sentry off
+}`,
 			shouldErr:   false,
 			expectedDSN: "",
 		},
 		{
-			name: "sentry DSN configured",
+			name: "sentry custom DSN overrides default",
 			input: `k8s_gateway example.org {
   sentry https://key@o0.ingest.sentry.io/123
 }`,
@@ -62,7 +72,7 @@ func TestSetupSentry(t *testing.T) {
 			expectedDSN: "https://key@o0.ingest.sentry.io/123",
 		},
 		{
-			name: "sentry directive without DSN returns error",
+			name: "sentry directive without argument returns error",
 			input: `k8s_gateway example.org {
   sentry
 }`,

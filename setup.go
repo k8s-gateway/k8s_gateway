@@ -18,6 +18,13 @@ var (
 
 const thisPlugin = "k8s_gateway"
 
+// defaultSentryDSN is the project-wide DSN used for automatic error reporting.
+// It is intentionally public — Sentry DSNs are write-only keys that can only
+// submit events; they cannot read data or authenticate as anything else.
+// Operators may override or disable this via `sentry <dsn>` / `sentry off`
+// in their Corefile.
+const defaultSentryDSN = "https://b349ce53c515d69659e2afedadb42bfc@o4511047748878336.ingest.de.sentry.io/4511047751827536"
+
 func init() {
 	plugin.Register(thisPlugin, setup)
 }
@@ -159,7 +166,12 @@ func parse(c *caddy.Controller) (*Gateway, error) {
 				if len(args) == 0 {
 					return nil, c.ArgErr()
 				}
-				gw.sentryDSN = args[0]
+				// "sentry off" lets operators explicitly disable error reporting.
+				if args[0] == "off" {
+					gw.sentryDSN = ""
+				} else {
+					gw.sentryDSN = args[0]
+				}
 
 			default:
 				return nil, c.Errf("Unknown property '%s'", c.Val())

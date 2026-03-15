@@ -89,6 +89,7 @@ func newGateway() *Gateway {
 		secondNS:            defaultSecondNS,
 		hostmaster:          defaultHostmaster,
 		nodeAddressType:     "InternalIP",
+		sentryDSN:           defaultSentryDSN,
 	}
 }
 
