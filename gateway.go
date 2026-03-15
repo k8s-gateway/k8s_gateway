@@ -100,6 +100,10 @@ func newGateway() *Gateway {
 		secondNS:            defaultSecondNS,
 		hostmaster:          defaultHostmaster,
 		nodeAddressType:     "InternalIP",
+		soaRefresh:          defaultSOARefresh,
+		soaRetry:            defaultSOARetry,
+		soaExpire:           defaultSOAExpire,
+		dirty:               true, // Start as dirty to generate initial serial
 	}
 }
 
