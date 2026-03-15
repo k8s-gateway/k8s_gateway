@@ -389,7 +389,7 @@ func TestUpdateResourcesUnknown(t *testing.T) {
 	gw.updateResources([]string{"Ingress", "UnknownThing"})
 
 	if len(gw.Resources) != 1 {
-		t.Errorf("expected 1 resource, got %d", len(gw.Resources))
+		t.Fatalf("expected 1 resource, got %d", len(gw.Resources))
 	}
 	if gw.Resources[0].name != "Ingress" {
 		t.Errorf("expected Ingress, got %s", gw.Resources[0].name)
