@@ -254,6 +254,38 @@ k8s_gateway example.com {
 }
 ```
 
+### Ingest server
+
+The `cmd/telemetry-server` directory contains a self-contained Go HTTP server that is the reference implementation of the `https://telemetry.k8s-gateway.dev/v1/usage` endpoint.
+
+#### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1/usage` | Accept a usage report and write it as NDJSON to stdout |
+| `GET` | `/healthz` | Liveness probe — always returns `200 OK` |
+
+#### Output format (NDJSON)
+
+Each accepted request produces one JSON line on stdout. The server adds a `received_at` timestamp; no IP address or other PII is stored.
+
+```json
+{"received_at":"2024-03-15T09:00:00Z","plugin_version":"v0.4.0","kubernetes_version":"v1.28.3","resources":["Ingress","Service"],"in_cluster":true}
+```
+
+Stdout NDJSON is easy to route to any downstream store — pipe it into a log shipper (Vector, Fluent Bit, Logstash), redirect it to a file, or tail it with `jq`:
+
+```bash
+./telemetry-server | jq .
+```
+
+#### Building and running
+
+```bash
+go build -o telemetry-server ./cmd/telemetry-server
+./telemetry-server -addr :8080
+```
+
 ## Build
 
 ### With compile-time configuration file
