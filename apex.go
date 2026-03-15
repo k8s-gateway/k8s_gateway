@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"fmt"
+
 	"github.com/coredns/coredns/plugin/pkg/dnsutil"
 	"github.com/coredns/coredns/request"
 
@@ -23,7 +25,11 @@ func (gw *Gateway) serveSubApex(state request.Request) (int, error) {
 		m.Ns = []dns.RR{gw.soa(state)}
 		if err := state.W.WriteMsg(m); err != nil {
 			log.Errorf("Failed to send a response: %s", err)
-			sentry.CaptureMessage("k8s_gateway: failed to write DNS response")
+			sentry.WithScope(func(scope *sentry.Scope) {
+				scope.SetTag("location", "apex_nxdomain_default")
+				scope.SetTag("error_type", fmt.Sprintf("%T", err))
+				sentry.CaptureException(fmt.Errorf("k8s_gateway: failed to write DNS response (%T)", err))
+			})
 		}
 		return 0, nil
 	case 2:
@@ -33,7 +39,11 @@ func (gw *Gateway) serveSubApex(state request.Request) (int, error) {
 			m.Ns = []dns.RR{gw.soa(state)}
 			if err := state.W.WriteMsg(m); err != nil {
 				log.Errorf("Failed to send a response: %s", err)
-				sentry.CaptureMessage("k8s_gateway: failed to write DNS response")
+				sentry.WithScope(func(scope *sentry.Scope) {
+					scope.SetTag("location", "apex_nxdomain_case2")
+					scope.SetTag("error_type", fmt.Sprintf("%T", err))
+					sentry.CaptureException(fmt.Errorf("k8s_gateway: failed to write DNS response (%T)", err))
+				})
 			}
 			return 0, nil
 		}
@@ -60,7 +70,11 @@ func (gw *Gateway) serveSubApex(state request.Request) (int, error) {
 
 		if err := state.W.WriteMsg(m); err != nil {
 			log.Errorf("Failed to send a response: %s", err)
-			sentry.CaptureMessage("k8s_gateway: failed to write DNS response")
+			sentry.WithScope(func(scope *sentry.Scope) {
+				scope.SetTag("location", "apex_answer")
+				scope.SetTag("error_type", fmt.Sprintf("%T", err))
+				sentry.CaptureException(fmt.Errorf("k8s_gateway: failed to write DNS response (%T)", err))
+			})
 		}
 		return 0, nil
 

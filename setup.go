@@ -43,8 +43,10 @@ func setup(c *caddy.Controller) error {
 			// BeforeSend scrubs all fields that could carry PII (user identity,
 			// HTTP request headers/body, custom extras, breadcrumbs) before any
 			// event is transmitted to Sentry.  This is a belt-and-suspenders
-			// guard on top of the static-string-only CaptureMessage calls used
-			// throughout the plugin.
+			// guard on top of the CaptureException calls used throughout the
+			// plugin, which already limit transmitted context to error types and
+			// static call-site tags (never DNS names, IP addresses, or raw
+			// error strings).
 			BeforeSend: func(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
 				event.User = sentry.User{}
 				event.Request = nil

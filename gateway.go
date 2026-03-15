@@ -145,7 +145,7 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 		if rec := recover(); rec != nil {
 			stack := debug.Stack()
 			log.Errorf("panic in ServeDNS: %v\n%s", rec, stack)
-			sentry.CaptureMessage(fmt.Sprintf("panic recovered in ServeDNS (type: %T)", rec))
+			sentry.CaptureException(fmt.Errorf("panic in ServeDNS (%T)", rec))
 			sentry.Flush(2 * time.Second)
 			rcode = dns.RcodeServerFailure
 			err = plugin.Error(thisPlugin, fmt.Errorf("recovered from panic: %T", rec))
@@ -169,7 +169,7 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 
 	if !gw.Controller.HasSynced() {
 		// TODO maybe there's a better way to do this? e.g. return an error back to the client?
-		sentry.CaptureMessage("k8s_gateway: could not sync required resources")
+		sentry.CaptureException(fmt.Errorf("k8s_gateway: could not sync required resources"))
 		return dns.RcodeServerFailure, plugin.Error(thisPlugin, fmt.Errorf("could not sync required resources"))
 	}
 
@@ -291,10 +291,15 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	m.Authoritative = true
 
 	if err := w.WriteMsg(m); err != nil {
-		// Log locally with full detail; report only a static message to Sentry
-		// so that DNS query names and IP addresses (PII) are never transmitted.
+		// Log locally with full detail.  Report only the error type and call
+		// site to Sentry — never the error string, which can embed IP addresses
+		// from the underlying net.OpError (PII).
 		log.Errorf("failed to send a response: %s", err)
-		sentry.CaptureMessage("k8s_gateway: failed to write DNS response")
+		sentry.WithScope(func(scope *sentry.Scope) {
+			scope.SetTag("location", "serve_dns")
+			scope.SetTag("error_type", fmt.Sprintf("%T", err))
+			sentry.CaptureException(fmt.Errorf("k8s_gateway: failed to write DNS response (%T)", err))
+		})
 	}
 
 	return dns.RcodeSuccess, nil
