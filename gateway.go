@@ -28,6 +28,7 @@ var staticResources = []*resourceWithIndex{
 	{name: "Ingress", lookup: noop},
 	{name: "Service", lookup: noop},
 	{name: "DNSEndpoint", lookup: noop},
+	{name: "Node", lookup: noop},
 }
 
 var noop lookupFunc = func([]string) (result []netip.Addr, raws []string) { return }
@@ -54,6 +55,7 @@ type Gateway struct {
 	secondNS            string
 	configFile          string
 	configContext       string
+	nodeAddressType     string
 	ExternalAddrFunc    func(request.Request) []dns.RR
 	resourceFilters     ResourceFilters
 
@@ -75,6 +77,7 @@ func newGateway() *Gateway {
 		apex:                defaultApex,
 		secondNS:            defaultSecondNS,
 		hostmaster:          defaultHostmaster,
+		nodeAddressType:     "InternalIP",
 	}
 }
 
@@ -187,6 +190,11 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 			if !isRootZoneQuery {
 				// No match, return NXDOMAIN
 				m.Rcode = dns.RcodeNameError
+			}
+
+			// as per rfc4074 #3 (symmetric: IPv6-only record yields NODATA for A queries)
+			if len(ipv6Addrs) > 0 {
+				m.Rcode = dns.RcodeSuccess
 			}
 
 			m.Ns = []dns.RR{gw.soa(state)}

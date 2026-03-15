@@ -33,7 +33,7 @@ func TestLookup(t *testing.T) {
 	gw.Next = test.NextHandler(dns.RcodeSuccess, nil)
 	gw.ExternalAddrFunc = gw.SelfAddress
 	gw.Controller = ctrl
-	real := []string{"Ingress", "Service", "HTTPRoute", "TLSRoute", "GRPCRoute", "DNSEndpoint"}
+	real := []string{"Ingress", "Service", "HTTPRoute", "TLSRoute", "GRPCRoute", "DNSEndpoint", "Node"}
 	fake := []string{"Pod", "Gateway"}
 
 	for _, resource := range real {
@@ -240,6 +240,55 @@ var tests = []test.Case{
 			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
 		},
 	},
+	// Existing Node by NodeHostName — InternalIP (default)
+	{
+		Qname: "node1.example.com.", Qtype: dns.TypeA, Rcode: dns.RcodeSuccess,
+		Answer: []dns.RR{
+			test.A("node1.example.com.  60  IN  A   10.0.0.1"),
+		},
+	},
+	// Existing Node — InternalIP is returned even when ExternalIP also exists
+	{
+		Qname: "node2.example.com.", Qtype: dns.TypeA, Rcode: dns.RcodeSuccess,
+		Answer: []dns.RR{
+			test.A("node2.example.com.  60  IN  A   10.0.0.2"),
+		},
+	},
+	// Non-existing Node | Test 22
+	{
+		Qname: "nodeX.example.com.", Qtype: dns.TypeA, Rcode: dns.RcodeNameError,
+		Ns: []dns.RR{
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+		},
+	},
+	// Dual-stack node: A record (InternalIPv4)
+	{
+		Qname: "node3.example.com.", Qtype: dns.TypeA, Rcode: dns.RcodeSuccess,
+		Answer: []dns.RR{
+			test.A("node3.example.com.  60  IN  A   10.0.0.3"),
+		},
+	},
+	// Dual-stack node: AAAA record (InternalIPv6)
+	{
+		Qname: "node3.example.com.", Qtype: dns.TypeAAAA, Rcode: dns.RcodeSuccess,
+		Answer: []dns.RR{
+			test.AAAA("node3.example.com.  60  IN  AAAA   fd00::3"),
+		},
+	},
+	// IPv6-only node: AAAA record
+	{
+		Qname: "node4.example.com.", Qtype: dns.TypeAAAA, Rcode: dns.RcodeSuccess,
+		Answer: []dns.RR{
+			test.AAAA("node4.example.com.  60  IN  AAAA   fd00::4"),
+		},
+	},
+	// IPv6-only node: A query returns NODATA (RFC 4074)
+	{
+		Qname: "node4.example.com.", Qtype: dns.TypeA, Rcode: dns.RcodeSuccess,
+		Ns: []dns.RR{
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+		},
+	},
 }
 
 var testsFallthrough = []FallthroughCase{
@@ -324,6 +373,24 @@ func testDNSEndpointLookup(keys []string) (results []netip.Addr, raws []string) 
 	return results, raws
 }
 
+var testNodeIndexes = map[string][]netip.Addr{
+	// InternalIPv4 only
+	"node1": {netip.MustParseAddr("10.0.0.1")},
+	// InternalIPv4 only (ExternalIP exists but is not selected by default)
+	"node2": {netip.MustParseAddr("10.0.0.2")},
+	// Dual-stack: InternalIPv4 + InternalIPv6
+	"node3": {netip.MustParseAddr("10.0.0.3"), netip.MustParseAddr("fd00::3")},
+	// IPv6-only InternalIP
+	"node4": {netip.MustParseAddr("fd00::4")},
+}
+
+func testNodeLookup(keys []string) (results []netip.Addr, raws []string) {
+	for _, key := range keys {
+		results = append(results, testNodeIndexes[strings.ToLower(key)]...)
+	}
+	return results, raws
+}
+
 func setupLookupFuncs(gw *Gateway) {
 	if resource := gw.lookupResource("Ingress"); resource != nil {
 		resource.lookup = testIngressLookup
@@ -333,5 +400,8 @@ func setupLookupFuncs(gw *Gateway) {
 	}
 	if resource := gw.lookupResource("DNSEndpoint"); resource != nil {
 		resource.lookup = testDNSEndpointLookup
+	}
+	if resource := gw.lookupResource("Node"); resource != nil {
+		resource.lookup = testNodeLookup
 	}
 }

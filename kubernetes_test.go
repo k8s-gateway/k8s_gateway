@@ -113,6 +113,7 @@ func TestController(t *testing.T) {
 	}
 	addServices(client)
 	addIngresses(client)
+	addNodes(client)
 	addDNSEndpoints(fakeRESTClient(testDNSEndpoints["dual.example.com"].Spec.Endpoints, "externaldns.k8s.io/v1alpha1", "DNSEndpoint", "ns1", "ep1", nil, nil, t))
 
 	gw := newGateway()
@@ -183,6 +184,27 @@ func TestController(t *testing.T) {
 			t.Errorf("DNSEndpoint key %s not found in index: %v", index, found)
 		}
 	}
+
+	for index, testObj := range testNodes {
+		found, _ := nodeHostnameIndexFunc(testObj)
+		if checkIgnoreLabel(testObj.Labels) {
+			if len(found) != 0 {
+				t.Errorf("Ignored Node key %s should not be found in index, but found: %v", index, found)
+			}
+			continue
+		}
+		indices := strings.Split(index, ",")
+		for _, idx := range indices {
+			if !isFound(strings.TrimSpace(idx), found) {
+				t.Errorf("Node key %s not found in index: %v", idx, found)
+			}
+		}
+		// Default address type is InternalIP
+		ips := fetchNodeIPsByType(testObj.Status.Addresses, core.NodeInternalIP)
+		if len(ips) == 0 {
+			t.Errorf("No IPs found for node %s with addrType InternalIP", testObj.Name)
+		}
+	}
 }
 
 func isFound(s string, ss []string) bool {
@@ -192,6 +214,57 @@ func isFound(s string, ss []string) bool {
 		}
 	}
 	return false
+}
+
+func TestFetchNodeIPsByType(t *testing.T) {
+	addresses := []core.NodeAddress{
+		{Type: core.NodeInternalIP, Address: "10.0.0.1"},
+		{Type: core.NodeExternalIP, Address: "203.0.113.1"},
+		{Type: core.NodeInternalIP, Address: "fd00::1"},
+		{Type: core.NodeExternalIP, Address: "2001:db8::1"},
+	}
+
+	tests := []struct {
+		name     string
+		addrType core.NodeAddressType
+		want     []string
+	}{
+		{
+			name:     "InternalIP returns IPv4 and IPv6 internal addresses",
+			addrType: core.NodeInternalIP,
+			want:     []string{"10.0.0.1", "fd00::1"},
+		},
+		{
+			name:     "ExternalIP returns IPv4 and IPv6 external addresses",
+			addrType: core.NodeExternalIP,
+			want:     []string{"203.0.113.1", "2001:db8::1"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := fetchNodeIPsByType(addresses, tc.addrType)
+			var gotStrs []string
+			for _, ip := range got {
+				gotStrs = append(gotStrs, ip.String())
+			}
+			if !stringSlicesEqual(gotStrs, tc.want) {
+				t.Errorf("fetchNodeIPsByType(%s) = %v, want %v", tc.addrType, gotStrs, tc.want)
+			}
+		})
+	}
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func addServices(client kubernetes.Interface) {
@@ -210,6 +283,16 @@ func addIngresses(client kubernetes.Interface) {
 		_, err := client.NetworkingV1().Ingresses("ns1").Create(ctx, ingress, metav1.CreateOptions{})
 		if err != nil {
 			log.Warningf("Failed to Create Ingress Objects :%s", err)
+		}
+	}
+}
+
+func addNodes(client kubernetes.Interface) {
+	ctx := context.TODO()
+	for _, node := range testNodes {
+		_, err := client.CoreV1().Nodes().Create(ctx, node, metav1.CreateOptions{})
+		if err != nil {
+			log.Warningf("Failed to Create Node Objects :%s", err)
 		}
 	}
 }
@@ -550,6 +633,77 @@ var testDNSEndpoints = map[string]*externaldnsv1.DNSEndpoint{
 					RecordType: "A",
 					Targets:    []string{"192.0.2.99"},
 				},
+			},
+		},
+	},
+}
+
+// testNodes is keyed by the expected NodeHostName index key.
+// Ignored nodes are keyed by name but have the ignore label set.
+var testNodes = map[string]*core.Node{
+	// node1: NodeHostName "node1", InternalIPv4 only
+	"node1": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node1",
+		},
+		Status: core.NodeStatus{
+			Addresses: []core.NodeAddress{
+				{Type: core.NodeHostName, Address: "node1"},
+				{Type: core.NodeInternalIP, Address: "10.0.0.1"},
+			},
+		},
+	},
+	// node2: NodeHostName "node2", InternalIPv4 + ExternalIPv4
+	"node2": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node2",
+		},
+		Status: core.NodeStatus{
+			Addresses: []core.NodeAddress{
+				{Type: core.NodeHostName, Address: "node2"},
+				{Type: core.NodeInternalIP, Address: "10.0.0.2"},
+				{Type: core.NodeExternalIP, Address: "203.0.113.10"},
+			},
+		},
+	},
+	// node3: NodeHostName "node3", dual-stack — InternalIPv4 + InternalIPv6 + ExternalIPv4
+	"node3": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node3",
+		},
+		Status: core.NodeStatus{
+			Addresses: []core.NodeAddress{
+				{Type: core.NodeHostName, Address: "node3"},
+				{Type: core.NodeInternalIP, Address: "10.0.0.3"},
+				{Type: core.NodeInternalIP, Address: "fd00::3"},
+				{Type: core.NodeExternalIP, Address: "203.0.113.11"},
+			},
+		},
+	},
+	// node4: NodeHostName "node4", IPv6-only InternalIP
+	"node4": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node4",
+		},
+		Status: core.NodeStatus{
+			Addresses: []core.NodeAddress{
+				{Type: core.NodeHostName, Address: "node4"},
+				{Type: core.NodeInternalIP, Address: "fd00::4"},
+			},
+		},
+	},
+	// Ignored node — should not appear in index
+	"ignored-node": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "ignored-node",
+			Labels: map[string]string{
+				ignoreLabelKey: "true",
+			},
+		},
+		Status: core.NodeStatus{
+			Addresses: []core.NodeAddress{
+				{Type: core.NodeHostName, Address: "ignored-node"},
+				{Type: core.NodeInternalIP, Address: "10.0.0.99"},
 			},
 		},
 	},
