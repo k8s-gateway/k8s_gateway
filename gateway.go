@@ -60,6 +60,11 @@ type Gateway struct {
 	resourceFilters     ResourceFilters
 
 	Fall fall.F
+
+	// telemetry
+	noMetrics         bool
+	kubernetesVersion string
+	inCluster         bool
 }
 
 type ResourceFilters struct {

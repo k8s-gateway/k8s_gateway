@@ -33,6 +33,22 @@ func setup(c *caddy.Controller) error {
 	}
 	gw.ExternalAddrFunc = gw.SelfAddress
 
+	resources := make([]string, 0, len(gw.ConfiguredResources))
+	for _, r := range gw.ConfiguredResources {
+		if r != nil {
+			resources = append(resources, *r)
+		}
+	}
+	// sendTelemetry is fire-and-forget: context.Background() is intentional so
+	// the goroutine is not cancelled when the caller's context is torn down.
+	// The goroutine respects its own 10-second timeout (see telemetryTimeout).
+	sendTelemetry(context.Background(), TelemetryData{
+		PluginVersion:     PluginVersion,
+		KubernetesVersion: gw.kubernetesVersion,
+		Resources:         resources,
+		InCluster:         gw.inCluster,
+	}, gw.noMetrics)
+
 	dnsserver.GetConfig(c).AddPlugin(func(next plugin.Handler) plugin.Handler {
 		gw.Next = next
 		return gw
@@ -129,6 +145,9 @@ func parse(c *caddy.Controller) (*Gateway, error) {
 					return nil, c.Errf("nodeAddressType must be 'InternalIP' or 'ExternalIP', got: %s", args[0])
 				}
 				gw.nodeAddressType = args[0]
+
+			case "noMetrics":
+				gw.noMetrics = true
 
 			default:
 				return nil, c.Errf("Unknown property '%s'", c.Val())

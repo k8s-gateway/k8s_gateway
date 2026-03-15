@@ -63,6 +63,7 @@ k8s_gateway [ZONES...]
     secondary SECONDARY
     kubeconfig KUBECONFIG [CONTEXT]
     fallthrough [ZONES...]
+    noMetrics
 }
 ```
 
@@ -74,6 +75,7 @@ k8s_gateway [ZONES...]
 * `secondary` can be used to specify the optional apex record value of a peer nameserver running in the cluster (see `Dual Nameserver Deployment` section below).
 * `kubeconfig` can be used to connect to a remote Kubernetes cluster using a kubeconfig file. `CONTEXT` is optional, if not set, then the current context specified in kubeconfig will be used. It supports TLS, username and password, or token-based authentication.
 * `fallthrough` if zone matches and no record can be generated, pass request to the next plugin. If **[ZONES...]** is omitted, then fallthrough happens for all zones for which the plugin is authoritative. If specific zones are listed (for example `in-addr.arpa` and `ip6.arpa`), then only queries for those zones will be subject to fallthrough.
+* `noMetrics` disables the anonymous telemetry HTTP POST. See [Telemetry](#telemetry) for details.
 
 Example:
 
@@ -217,6 +219,72 @@ zone.example.com (NS record) -> exdns-1-k8s-gateway.zone.example.com (A record) 
 zone.example.com (NS record) -> exdns-2-k8s-gateway.zone.example.com (A record) -> 203.0.113.11
 ```
 
+
+## Telemetry
+
+`k8s_gateway` reports a small, **anonymous** usage snapshot once at startup to help the maintainers understand how the plugin is being used. The payload contains **no personally identifiable information**.
+
+### What is collected
+
+| Field | Example | Description |
+|-------|---------|-------------|
+| `plugin_version` | `"v0.4.0"` | The version of `k8s_gateway` that is running |
+| `kubernetes_version` | `"v1.28.3"` | The GitVersion string returned by the Kubernetes API server |
+| `resources` | `["Ingress","Service"]` | The resource types enabled in the Corefile |
+| `in_cluster` | `true` | Whether the plugin is running inside a Kubernetes Pod (`true`) or using an external kubeconfig file (`false`) |
+
+### Endpoint
+
+The data is sent as a single HTTP POST request with a JSON body to:
+
+```
+https://telemetry.k8s-gw.skylab.fi/api/v1/usage
+```
+
+The payload is also written to the CoreDNS log at `INFO` level at startup so it is always visible regardless of whether remote reporting is enabled.
+
+### Opting out
+
+Add `noMetrics` anywhere inside the `k8s_gateway` block in your Corefile to disable the HTTP POST. The startup log message is always emitted.
+
+```
+k8s_gateway example.com {
+    resources Ingress
+    noMetrics
+}
+```
+
+### Ingest server
+
+The `cmd/telemetry-server` directory contains a self-contained Go HTTP server that is the reference implementation of the `https://telemetry.k8s-gateway.dev/v1/usage` endpoint.
+
+#### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1/usage` | Accept a usage report and write it as NDJSON to stdout |
+| `GET` | `/healthz` | Liveness probe — always returns `200 OK` |
+
+#### Output format (NDJSON)
+
+Each accepted request produces one JSON line on stdout. The server adds a `received_at` timestamp; no IP address or other PII is stored.
+
+```json
+{"received_at":"2024-03-15T09:00:00Z","plugin_version":"v0.4.0","kubernetes_version":"v1.28.3","resources":["Ingress","Service"],"in_cluster":true}
+```
+
+Stdout NDJSON is easy to route to any downstream store — pipe it into a log shipper (Vector, Fluent Bit, Logstash), redirect it to a file, or tail it with `jq`:
+
+```bash
+./telemetry-server | jq .
+```
+
+#### Building and running
+
+```bash
+go build -o telemetry-server ./cmd/telemetry-server
+./telemetry-server -addr :8080
+```
 
 ## Build
 

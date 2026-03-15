@@ -1,5 +1,6 @@
 vendor
 coredns
+telemetry-server
 tilt_modules
 *.tmp
 .helm
