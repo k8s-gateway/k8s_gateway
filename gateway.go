@@ -28,7 +28,6 @@ var staticResources = []*resourceWithIndex{
 	{name: "Ingress", lookup: noop},
 	{name: "Service", lookup: noop},
 	{name: "DNSEndpoint", lookup: noop},
-	{name: "Node", lookup: noop},
 }
 
 var noop lookupFunc = func([]string) (result []netip.Addr, raws []string) { return }
@@ -55,7 +54,6 @@ type Gateway struct {
 	secondNS            string
 	configFile          string
 	configContext       string
-	nodeAddressType     string
 	ExternalAddrFunc    func(request.Request) []dns.RR
 	resourceFilters     ResourceFilters
 
@@ -77,7 +75,6 @@ func newGateway() *Gateway {
 		apex:                defaultApex,
 		secondNS:            defaultSecondNS,
 		hostmaster:          defaultHostmaster,
-		nodeAddressType:     "InternalIP",
 	}
 }
 

@@ -32,7 +32,6 @@ const (
 	defaultResyncPeriod              = 0
 	ingressHostnameIndex             = "ingressHostname"
 	serviceHostnameIndex             = "serviceHostname"
-	nodeHostnameIndex                = "nodeHostname"
 	gatewayUniqueIndex               = "gatewayIndex"
 	httpRouteHostnameIndex           = "httpRouteHostname"
 	tlsRouteHostnameIndex            = "tlsRouteHostname"
@@ -163,23 +162,6 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 			resource.lookup = lookupDNSEndpoint(dnsEndpointController)
 			ctrl.controllers = append(ctrl.controllers, dnsEndpointController)
 			log.Infof("DNSEndpoint controller initialized")
-		}
-	}
-
-	if slices.Contains(configuredResources, "Node") {
-		if resource := originalGateway.lookupResource("Node"); resource != nil {
-			nodeController := cache.NewSharedIndexInformer(
-				&cache.ListWatch{
-					ListFunc:  nodeLister(ctx, ctrl.client),
-					WatchFunc: nodeWatcher(ctx, ctrl.client),
-				},
-				&core.Node{},
-				defaultResyncPeriod,
-				cache.Indexers{nodeHostnameIndex: nodeHostnameIndexFunc},
-			)
-			resource.lookup = lookupNodeIndex(nodeController, core.NodeAddressType(originalGateway.nodeAddressType))
-			ctrl.controllers = append(ctrl.controllers, nodeController)
-			log.Infof("Node controller initialized")
 		}
 	}
 
@@ -408,18 +390,6 @@ func serviceWatcher(ctx context.Context, c kubernetes.Interface, ns string) func
 	}
 }
 
-func nodeLister(ctx context.Context, c kubernetes.Interface) func(metav1.ListOptions) (runtime.Object, error) {
-	return func(opts metav1.ListOptions) (runtime.Object, error) {
-		return c.CoreV1().Nodes().List(ctx, opts)
-	}
-}
-
-func nodeWatcher(ctx context.Context, c kubernetes.Interface) func(metav1.ListOptions) (watch.Interface, error) {
-	return func(opts metav1.ListOptions) (watch.Interface, error) {
-		return c.CoreV1().Nodes().Watch(ctx, opts)
-	}
-}
-
 func dnsEndpointWatcher(ctx context.Context, ns string) func(metav1.ListOptions) (watch.Interface, error) {
 	return func(opts metav1.ListOptions) (watch.Interface, error) {
 		opts.Watch = true
@@ -566,29 +536,6 @@ func splitHostnameAnnotation(annotation string) []string {
 	return strings.Split(strings.ReplaceAll(annotation, " ", ""), ",")
 }
 
-func nodeHostnameIndexFunc(obj interface{}) ([]string, error) {
-	node, ok := obj.(*core.Node)
-	if !ok {
-		return []string{}, nil
-	}
-
-	// Check if object should be ignored
-	if checkIgnoreLabel(node.Labels) {
-		log.Debugf("Ignoring node %s due to %s label", node.Name, ignoreLabelKey)
-		return []string{}, nil
-	}
-
-	var hostnames []string
-	for _, addr := range node.Status.Addresses {
-		if addr.Type == core.NodeHostName {
-			log.Debugf("Adding index %s for node %s", addr.Address, node.Name)
-			hostnames = append(hostnames, strings.ToLower(addr.Address))
-		}
-	}
-
-	return hostnames, nil
-}
-
 func dnsEndpointTargetIndexFunc(obj interface{}) ([]string, error) {
 	dnsEndpoint, ok := obj.(*externaldnsv1.DNSEndpoint)
 	if !ok {
@@ -652,22 +599,6 @@ func lookupServiceIndex(ctrl cache.SharedIndexInformer) func([]string) (results 
 			}
 
 			result = append(result, fetchServiceLoadBalancerIPs(service.Status.LoadBalancer.Ingress)...)
-		}
-		return
-	}
-}
-
-func lookupNodeIndex(ctrl cache.SharedIndexInformer, addrType core.NodeAddressType) func([]string) (results []netip.Addr, raws []string) {
-	return func(indexKeys []string) (result []netip.Addr, raw []string) {
-		var objs []interface{}
-		for _, key := range indexKeys {
-			obj, _ := ctrl.GetIndexer().ByIndex(nodeHostnameIndex, strings.ToLower(key))
-			objs = append(objs, obj...)
-		}
-		log.Debugf("Found %d matching Node objects", len(objs))
-		for _, obj := range objs {
-			node, _ := obj.(*core.Node)
-			result = append(result, fetchNodeIPsByType(node.Status.Addresses, addrType)...)
 		}
 		return
 	}
@@ -877,22 +808,6 @@ func fetchIngressLoadBalancerIPs(ingresses []networking.IngressLoadBalancerIngre
 				continue
 			}
 			results = append(results, addr)
-		}
-	}
-	return
-}
-
-// fetchNodeIPsByType returns all IP addresses of the given type from a node's
-// address list. Both IPv4 and IPv6 addresses of that type are returned,
-// providing natural dual-stack support.
-func fetchNodeIPsByType(addresses []core.NodeAddress, addrType core.NodeAddressType) (results []netip.Addr) {
-	for _, addr := range addresses {
-		if addr.Type == addrType {
-			parsed, err := netip.ParseAddr(addr.Address)
-			if err != nil {
-				continue
-			}
-			results = append(results, parsed)
 		}
 	}
 	return

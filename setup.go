@@ -120,16 +120,6 @@ func parse(c *caddy.Controller) (*Gateway, error) {
 				}
 				gw.resourceFilters.gatewayClasses = args
 
-			case "nodeAddressType":
-				args := c.RemainingArgs()
-				if len(args) == 0 {
-					return nil, c.ArgErr()
-				}
-				if args[0] != "InternalIP" && args[0] != "ExternalIP" {
-					return nil, c.Errf("nodeAddressType must be 'InternalIP' or 'ExternalIP', got: %s", args[0])
-				}
-				gw.nodeAddressType = args[0]
-
 			default:
 				return nil, c.Errf("Unknown property '%s'", c.Val())
 			}
