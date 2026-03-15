@@ -102,12 +102,13 @@ func (gw *Gateway) updateResources(newResources []string) {
 	log.Infof("updating resources with: %v", newResources)
 	gw.Resources = nil // Clear existing resources
 
-	// Create a map to hold enabled resources
+	// Build a map of cloned resource entries from staticResources so that each
+	// Gateway instance owns its own resourceWithIndex structs and per-instance
+	// lookup functions wired by kubernetes.go do not mutate the shared slice.
 	resourceLookup := make(map[string]*resourceWithIndex)
-
-	// Fill the resource lookup map from static resources
 	for _, resource := range staticResources {
-		resourceLookup[resource.name] = resource
+		clone := *resource
+		resourceLookup[resource.name] = &clone
 	}
 
 	// Populate gw.Resources based on newResources
