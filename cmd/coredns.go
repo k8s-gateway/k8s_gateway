@@ -4,7 +4,7 @@ import (
     "fmt"
 
     _ "github.com/coredns/coredns/core/plugin"
-    _ "github.com/k8s-gateway/k8s_gateway"
+    gw "github.com/k8s-gateway/k8s_gateway"
 
     "github.com/coredns/caddy"
     "github.com/coredns/coredns/core/dnsserver"
@@ -41,5 +41,7 @@ func init() {
 func main() {
     // extend CoreDNS version with plugin details
     caddy.AppVersion = fmt.Sprintf("%s+k8s_gateway-%s", coremain.CoreVersion, pluginVersion)
+    // propagate the build-time version into the gateway package for telemetry
+    gw.PluginVersion = pluginVersion
     coremain.Run()
 }

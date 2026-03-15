@@ -294,6 +294,16 @@ func (gw *Gateway) RunKubeController(ctx context.Context) error {
 		log.Warningf("crd %s not found. ignoring and continuing execution", externalDNSEndpointGroup)
 	}
 
+	// Detect whether we are running inside a Kubernetes cluster.
+	gw.inCluster = gw.configFile == ""
+
+	// Retrieve the Kubernetes server version for telemetry; non-fatal on error.
+	if sv, err := kubeClient.Discovery().ServerVersion(); err != nil {
+		log.Warningf("telemetry: could not retrieve kubernetes version: %v", err)
+	} else {
+		gw.kubernetesVersion = sv.GitVersion
+	}
+
 	gw.Controller = newKubeController(ctx, kubeClient, gwAPIClient, gw)
 	go gw.Controller.run()
 
