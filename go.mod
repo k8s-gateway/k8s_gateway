@@ -5,6 +5,7 @@ go 1.25.4
 require (
 	github.com/coredns/caddy v1.1.4
 	github.com/coredns/coredns v1.14.2
+	github.com/getsentry/sentry-go v0.43.0
 	github.com/miekg/dns v1.1.72
 	k8s.io/api v0.35.2
 	k8s.io/apiextensions-apiserver v0.35.2

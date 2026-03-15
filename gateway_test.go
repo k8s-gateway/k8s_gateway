@@ -395,3 +395,34 @@ func TestUpdateResourcesUnknown(t *testing.T) {
 		t.Errorf("expected Ingress, got %s", gw.Resources[0].name)
 	}
 }
+
+// TestServeDNSPanicRecovery verifies that a panic inside ServeDNS is caught,
+// does not propagate to the caller, and returns dns.RcodeServerFailure.
+func TestServeDNSPanicRecovery(t *testing.T) {
+	ctrl := &KubeController{hasSynced: true}
+
+	gw := newGateway()
+	gw.Zones = []string{"example.com."}
+	gw.Controller = ctrl
+	gw.ExternalAddrFunc = gw.SelfAddress
+
+	// Wire a lookup function that panics to simulate an unexpected runtime error.
+	for _, r := range gw.Resources {
+		r.lookup = func(_ []string) ([]netip.Addr, []string) {
+			panic("simulated internal error")
+		}
+	}
+
+	r := new(dns.Msg)
+	r.SetQuestion("svc1.ns1.example.com.", dns.TypeA)
+	w := dnstest.NewRecorder(&test.ResponseWriter{})
+
+	rcode, err := gw.ServeDNS(context.TODO(), w, r)
+
+	if err == nil {
+		t.Fatal("expected non-nil error after panic recovery, got nil")
+	}
+	if rcode != dns.RcodeServerFailure {
+		t.Errorf("expected RcodeServerFailure (%d), got %d", dns.RcodeServerFailure, rcode)
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"github.com/coredns/coredns/core/dnsserver"
 	"github.com/coredns/coredns/plugin"
 	clog "github.com/coredns/coredns/plugin/pkg/log"
+	sentry "github.com/getsentry/sentry-go"
 )
 
 var (
@@ -25,6 +26,29 @@ func setup(c *caddy.Controller) error {
 	gw, err := parse(c)
 	if err != nil {
 		return plugin.Error(thisPlugin, err)
+	}
+
+	if gw.sentryDSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn:              gw.sentryDSN,
+			SendDefaultPII:   false,
+			AttachStacktrace: true,
+			// BeforeSend scrubs all fields that could carry PII (user identity,
+			// HTTP request headers/body, custom extras, breadcrumbs) before any
+			// event is transmitted to Sentry.  This is a belt-and-suspenders
+			// guard on top of the static-string-only CaptureMessage calls used
+			// throughout the plugin.
+			BeforeSend: func(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
+				event.User = sentry.User{}
+				event.Request = nil
+				event.Extra = nil
+				event.Breadcrumbs = nil
+				return event
+			},
+		}); err != nil {
+			return plugin.Error(thisPlugin, err)
+		}
+		log.Infof("Sentry error reporting initialized")
 	}
 
 	err = gw.RunKubeController(context.Background())
@@ -129,6 +153,13 @@ func parse(c *caddy.Controller) (*Gateway, error) {
 					return nil, c.Errf("nodeAddressType must be 'InternalIP' or 'ExternalIP', got: %s", args[0])
 				}
 				gw.nodeAddressType = args[0]
+
+			case "sentry":
+				args := c.RemainingArgs()
+				if len(args) == 0 {
+					return nil, c.ArgErr()
+				}
+				gw.sentryDSN = args[0]
 
 			default:
 				return nil, c.Errf("Unknown property '%s'", c.Val())

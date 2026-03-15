@@ -39,3 +39,57 @@ func TestSetup(t *testing.T) {
 		}
 	}
 }
+
+func TestSetupSentry(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		shouldErr      bool
+		expectedDSN    string
+	}{
+		{
+			name:        "no sentry directive",
+			input:       `k8s_gateway example.org`,
+			shouldErr:   false,
+			expectedDSN: "",
+		},
+		{
+			name: "sentry DSN configured",
+			input: `k8s_gateway example.org {
+  sentry https://key@o0.ingest.sentry.io/123
+}`,
+			shouldErr:   false,
+			expectedDSN: "https://key@o0.ingest.sentry.io/123",
+		},
+		{
+			name: "sentry directive without DSN returns error",
+			input: `k8s_gateway example.org {
+  sentry
+}`,
+			shouldErr:   true,
+			expectedDSN: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := caddy.NewTestController("dns", tc.input)
+			gw, err := parse(c)
+
+			if tc.shouldErr {
+				if err == nil {
+					t.Errorf("expected error for input %q but got none", tc.input)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error for input %q: %v", tc.input, err)
+			}
+
+			if gw.sentryDSN != tc.expectedDSN {
+				t.Errorf("expected sentryDSN %q, got %q", tc.expectedDSN, gw.sentryDSN)
+			}
+		})
+	}
+}

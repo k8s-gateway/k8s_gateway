@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/plugin/pkg/fall"
 	"github.com/coredns/coredns/request"
+	sentry "github.com/getsentry/sentry-go"
 	"github.com/miekg/dns"
 )
 
@@ -53,6 +56,7 @@ type Gateway struct {
 	apex                string
 	hostmaster          string
 	secondNS            string
+	sentryDSN           string
 	configFile          string
 	configContext       string
 	nodeAddressType     string
@@ -132,7 +136,21 @@ func (gw *Gateway) SetConfiguredResources(newResources []string) {
 }
 
 // ServeDNS implements the plugin.Handle interface.
-func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
+func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (rcode int, err error) {
+	// Recover from any unexpected panic so the DNS server keeps running.
+	// Only the panic type is sent to Sentry — never the panic value, which
+	// could contain DNS query names or IP addresses (PII).
+	defer func() {
+		if rec := recover(); rec != nil {
+			stack := debug.Stack()
+			log.Errorf("panic in ServeDNS: %v\n%s", rec, stack)
+			sentry.CaptureMessage(fmt.Sprintf("panic recovered in ServeDNS (type: %T)", rec))
+			sentry.Flush(2 * time.Second)
+			rcode = dns.RcodeServerFailure
+			err = plugin.Error(thisPlugin, fmt.Errorf("recovered from panic: %T", rec))
+		}
+	}()
+
 	state := request.Request{W: w, Req: r}
 	//log.Infof("Incoming query %s", state.QName())
 
@@ -150,6 +168,7 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 
 	if !gw.Controller.HasSynced() {
 		// TODO maybe there's a better way to do this? e.g. return an error back to the client?
+		sentry.CaptureMessage("k8s_gateway: could not sync required resources")
 		return dns.RcodeServerFailure, plugin.Error(thisPlugin, fmt.Errorf("could not sync required resources"))
 	}
 
@@ -271,7 +290,10 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	m.Authoritative = true
 
 	if err := w.WriteMsg(m); err != nil {
+		// Log locally with full detail; report only a static message to Sentry
+		// so that DNS query names and IP addresses (PII) are never transmitted.
 		log.Errorf("failed to send a response: %s", err)
+		sentry.CaptureMessage("k8s_gateway: failed to write DNS response")
 	}
 
 	return dns.RcodeSuccess, nil

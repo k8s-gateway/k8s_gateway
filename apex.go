@@ -4,6 +4,7 @@ import (
 	"github.com/coredns/coredns/plugin/pkg/dnsutil"
 	"github.com/coredns/coredns/request"
 
+	sentry "github.com/getsentry/sentry-go"
 	"github.com/miekg/dns"
 )
 
@@ -22,6 +23,7 @@ func (gw *Gateway) serveSubApex(state request.Request) (int, error) {
 		m.Ns = []dns.RR{gw.soa(state)}
 		if err := state.W.WriteMsg(m); err != nil {
 			log.Errorf("Failed to send a response: %s", err)
+			sentry.CaptureMessage("k8s_gateway: failed to write DNS response")
 		}
 		return 0, nil
 	case 2:
@@ -31,6 +33,7 @@ func (gw *Gateway) serveSubApex(state request.Request) (int, error) {
 			m.Ns = []dns.RR{gw.soa(state)}
 			if err := state.W.WriteMsg(m); err != nil {
 				log.Errorf("Failed to send a response: %s", err)
+				sentry.CaptureMessage("k8s_gateway: failed to write DNS response")
 			}
 			return 0, nil
 		}
@@ -57,6 +60,7 @@ func (gw *Gateway) serveSubApex(state request.Request) (int, error) {
 
 		if err := state.W.WriteMsg(m); err != nil {
 			log.Errorf("Failed to send a response: %s", err)
+			sentry.CaptureMessage("k8s_gateway: failed to write DNS response")
 		}
 		return 0, nil
 
