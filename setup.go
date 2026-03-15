@@ -122,7 +122,7 @@ func parse(c *caddy.Controller) (*Gateway, error) {
 
 			case "nodeAddressType":
 				args := c.RemainingArgs()
-				if len(args) == 0 {
+				if len(args) != 1 {
 					return nil, c.ArgErr()
 				}
 				if args[0] != "InternalIP" && args[0] != "ExternalIP" {

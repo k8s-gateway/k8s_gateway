@@ -69,8 +69,15 @@ type ResourceFilters struct {
 
 // Create a new Gateway instance
 func newGateway() *Gateway {
+	// Clone staticResources so each Gateway owns its own lookup function entries,
+	// preventing cross-Gateway mutation when kubernetes.go wires per-instance lookups.
+	resources := make([]*resourceWithIndex, len(staticResources))
+	for i, r := range staticResources {
+		clone := *r
+		resources[i] = &clone
+	}
 	return &Gateway{
-		Resources:           staticResources,
+		Resources:           resources,
 		ConfiguredResources: []*string{},
 		ttlLow:              ttlDefault,
 		ttlSOA:              ttlSOA,
