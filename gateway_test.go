@@ -195,6 +195,20 @@ var tests = []test.Case{
 			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
 		},
 	},
+	// Existing Service AAAA record only | Test 12
+	{
+		Qname: "svc4.ns1.example.com.", Qtype: dns.TypeAAAA, Rcode: dns.RcodeSuccess,
+		Answer: []dns.RR{
+			test.AAAA("svc4.ns1.example.com.    60  IN  AAAA    fd12:3456:789a:2::"),
+		},
+	},
+	// Existing Service AAAA-only record, A query returns NODATA (RFC 4074) | Test 13
+	{
+		Qname: "svc4.ns1.example.com.", Qtype: dns.TypeA, Rcode: dns.RcodeSuccess,
+		Ns: []dns.RR{
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+		},
+	},
 	// Existing Service IPv6 | Test 16
 	{
 		Qname: "svc1.ns1.example.com.", Qtype: dns.TypeAAAA, Rcode: dns.RcodeSuccess,
@@ -274,6 +288,7 @@ var testServiceIndexes = map[string][]netip.Addr{
 	"svc1.ns1":         {netip.MustParseAddr("192.0.1.1"), netip.MustParseAddr("fd12:3456:789a:1::")},
 	"svc2.ns1":         {netip.MustParseAddr("192.0.1.2")},
 	"svc3.ns1":         {},
+	"svc4.ns1":         {netip.MustParseAddr("fd12:3456:789a:2::")},
 	"dns1.kube-system": {netip.MustParseAddr("192.0.1.53")},
 }
 
@@ -333,5 +348,50 @@ func setupLookupFuncs(gw *Gateway) {
 	}
 	if resource := gw.lookupResource("DNSEndpoint"); resource != nil {
 		resource.lookup = testDNSEndpointLookup
+	}
+}
+
+// TestUpdateResourcesIsolation verifies that updateResources does not share
+// resourceWithIndex pointers with the package-level staticResources slice.
+// Mutating a lookup func on gw.Resources must not affect staticResources.
+func TestUpdateResourcesIsolation(t *testing.T) {
+	gw := newGateway()
+	gw.updateResources([]string{"Ingress", "Service", "Node"})
+
+	sentinel := func([]string) ([]netip.Addr, []string) { return nil, nil }
+
+	for _, r := range gw.Resources {
+		r.lookup = sentinel
+	}
+
+	for _, sr := range staticResources {
+		// The lookup field of each staticResources entry must still be noop,
+		// not the sentinel we assigned to gw.Resources entries.
+		addrs, _ := sr.lookup(nil)
+		if len(addrs) != 0 {
+			t.Errorf("staticResources entry %q was mutated by updateResources", sr.name)
+		}
+		// A direct pointer comparison: if sr is the same struct as the one
+		// inside gw.Resources the test above may not be enough, so also
+		// confirm the pointer itself differs from every gw.Resources entry.
+		for _, gr := range gw.Resources {
+			if sr == gr {
+				t.Errorf("gw.Resources entry %q shares a pointer with staticResources", sr.name)
+			}
+		}
+	}
+}
+
+// TestUpdateResourcesUnknown verifies that unknown resource names are silently
+// skipped and do not end up in gw.Resources.
+func TestUpdateResourcesUnknown(t *testing.T) {
+	gw := newGateway()
+	gw.updateResources([]string{"Ingress", "UnknownThing"})
+
+	if len(gw.Resources) != 1 {
+		t.Fatalf("expected 1 resource, got %d", len(gw.Resources))
+	}
+	if gw.Resources[0].name != "Ingress" {
+		t.Errorf("expected Ingress, got %s", gw.Resources[0].name)
 	}
 }

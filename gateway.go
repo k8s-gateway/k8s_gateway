@@ -28,6 +28,7 @@ var staticResources = []*resourceWithIndex{
 	{name: "Ingress", lookup: noop},
 	{name: "Service", lookup: noop},
 	{name: "DNSEndpoint", lookup: noop},
+	{name: "Node", lookup: noop},
 }
 
 var noop lookupFunc = func([]string) (result []netip.Addr, raws []string) { return }
@@ -54,6 +55,7 @@ type Gateway struct {
 	secondNS            string
 	configFile          string
 	configContext       string
+	nodeAddressType     string
 	ExternalAddrFunc    func(request.Request) []dns.RR
 	resourceFilters     ResourceFilters
 
@@ -67,14 +69,22 @@ type ResourceFilters struct {
 
 // Create a new Gateway instance
 func newGateway() *Gateway {
+	// Clone staticResources so each Gateway owns its own lookup function entries,
+	// preventing cross-Gateway mutation when kubernetes.go wires per-instance lookups.
+	resources := make([]*resourceWithIndex, len(staticResources))
+	for i, r := range staticResources {
+		clone := *r
+		resources[i] = &clone
+	}
 	return &Gateway{
-		Resources:           staticResources,
+		Resources:           resources,
 		ConfiguredResources: []*string{},
 		ttlLow:              ttlDefault,
 		ttlSOA:              ttlSOA,
 		apex:                defaultApex,
 		secondNS:            defaultSecondNS,
 		hostmaster:          defaultHostmaster,
+		nodeAddressType:     "InternalIP",
 	}
 }
 
@@ -92,12 +102,13 @@ func (gw *Gateway) updateResources(newResources []string) {
 	log.Infof("updating resources with: %v", newResources)
 	gw.Resources = nil // Clear existing resources
 
-	// Create a map to hold enabled resources
+	// Build a map of cloned resource entries from staticResources so that each
+	// Gateway instance owns its own resourceWithIndex structs and per-instance
+	// lookup functions wired by kubernetes.go do not mutate the shared slice.
 	resourceLookup := make(map[string]*resourceWithIndex)
-
-	// Fill the resource lookup map from static resources
 	for _, resource := range staticResources {
-		resourceLookup[resource.name] = resource
+		clone := *resource
+		resourceLookup[resource.name] = &clone
 	}
 
 	// Populate gw.Resources based on newResources
@@ -187,6 +198,11 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 			if !isRootZoneQuery {
 				// No match, return NXDOMAIN
 				m.Rcode = dns.RcodeNameError
+			}
+
+			// as per rfc4074 #3 (symmetric: IPv6-only record yields NODATA for A queries)
+			if len(ipv6Addrs) > 0 {
+				m.Rcode = dns.RcodeSuccess
 			}
 
 			m.Ns = []dns.RR{gw.soa(state)}

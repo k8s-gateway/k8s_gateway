@@ -181,3 +181,51 @@ tests:
           path: rules[2].resources
           content: dnsendpoints/status
         documentIndex: 0
+
+  - it: Should render RBAC for Node
+    set:
+      domain: example.com
+      watchedResources:
+        - Node
+    template: templates/rbac.yaml
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: ClusterRole
+        documentIndex: 0
+      - isKind:
+          of: ClusterRoleBinding
+        documentIndex: 1
+      - contains:
+          path: rules[0].apiGroups
+          content: apiextensions.k8s.io
+        documentIndex: 0
+      - contains:
+          path: rules[1].resources
+          content: nodes
+        documentIndex: 0
+      - contains:
+          path: rules[1].verbs
+          content: list
+        documentIndex: 0
+      - contains:
+          path: rules[1].verbs
+          content: watch
+        documentIndex: 0
+
+  - it: Should not render Node RBAC when Node is not a watched resource
+    set:
+      domain: example.com
+      watchedResources:
+        - Ingress
+    template: templates/rbac.yaml
+    asserts:
+      - hasDocuments:
+          count: 2
+      - notContains:
+          path: rules
+          content:
+            resources:
+              - nodes
+        documentIndex: 0

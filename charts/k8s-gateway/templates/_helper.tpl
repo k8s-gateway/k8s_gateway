@@ -187,3 +187,26 @@ false
 
   {{- $securityContext | toYaml -}}
 {{- end -}}
+
+{{/*
+  k8s-gateway.node:
+  Returns "true" if "Node" is in .Values.watchedResources,
+  otherwise returns "false".
+*/}}
+{{- define "k8s-gateway.node" -}}
+  {{- if .Values.watchedResources -}}
+    {{- $found := false -}}
+    {{- range .Values.watchedResources -}}
+      {{- if eq . "Node" -}}
+        {{- $found = true -}}
+      {{- end -}}
+    {{- end -}}
+    {{- if $found -}}
+true
+    {{- else -}}
+false
+    {{- end -}}
+  {{- else -}}
+false
+  {{- end -}}
+{{- end }}

@@ -37,6 +37,7 @@ const (
 	tlsRouteHostnameIndex            = "tlsRouteHostname"
 	grpcRouteHostnameIndex           = "grpcRouteHostname"
 	externalDNSHostnameIndex         = "externalDNSHostname"
+	nodeHostnameIndex                = "nodeHostname"
 	hostnameAnnotationKey            = "coredns.io/hostname"
 	externalDnsHostnameAnnotationKey = "external-dns.alpha.kubernetes.io/hostname"
 	externalDNSEndpointGroup         = "externaldns.k8s.io/v1alpha1"
@@ -162,6 +163,23 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 			resource.lookup = lookupDNSEndpoint(dnsEndpointController)
 			ctrl.controllers = append(ctrl.controllers, dnsEndpointController)
 			log.Infof("DNSEndpoint controller initialized")
+		}
+	}
+
+	if slices.Contains(dereferenceStrings(originalGateway.ConfiguredResources), "Node") {
+		if resource := originalGateway.lookupResource("Node"); resource != nil {
+			nodeController := cache.NewSharedIndexInformer(
+				&cache.ListWatch{
+					ListFunc:  nodeLister(ctx, ctrl.client),
+					WatchFunc: nodeWatcher(ctx, ctrl.client),
+				},
+				&core.Node{},
+				defaultResyncPeriod,
+				cache.Indexers{nodeHostnameIndex: nodeHostnameIndexFunc},
+			)
+			resource.lookup = lookupNodeIndex(nodeController, core.NodeAddressType(originalGateway.nodeAddressType))
+			ctrl.controllers = append(ctrl.controllers, nodeController)
+			log.Infof("Node controller initialized")
 		}
 	}
 
@@ -833,4 +851,71 @@ func checkIgnoreLabel(labels map[string]string) bool {
 		}
 	}
 	return false
+}
+
+func nodeLister(ctx context.Context, c kubernetes.Interface) func(metav1.ListOptions) (runtime.Object, error) {
+	return func(opts metav1.ListOptions) (runtime.Object, error) {
+		return c.CoreV1().Nodes().List(ctx, opts)
+	}
+}
+
+func nodeWatcher(ctx context.Context, c kubernetes.Interface) func(metav1.ListOptions) (watch.Interface, error) {
+	return func(opts metav1.ListOptions) (watch.Interface, error) {
+		return c.CoreV1().Nodes().Watch(ctx, opts)
+	}
+}
+
+// nodeHostnameIndexFunc indexes a Node by the hostnames listed in its status addresses
+// (address type "Hostname"). Nodes without a Hostname address are not indexed.
+func nodeHostnameIndexFunc(obj interface{}) ([]string, error) {
+	node, ok := obj.(*core.Node)
+	if !ok {
+		return []string{}, nil
+	}
+
+	if checkIgnoreLabel(node.Labels) {
+		log.Debugf("Ignoring node %s due to %s label", node.Name, ignoreLabelKey)
+		return []string{}, nil
+	}
+
+	var hostnames []string
+	for _, addr := range node.Status.Addresses {
+		if addr.Type == core.NodeHostName {
+			log.Debugf("Adding index %s for node %s", addr.Address, node.Name)
+			hostnames = append(hostnames, addr.Address)
+		}
+	}
+	return hostnames, nil
+}
+
+// fetchNodeIPsByType returns all IP addresses of the given type from a node's status addresses.
+// Both IPv4 and IPv6 addresses are returned, enabling dual-stack support.
+func fetchNodeIPsByType(addresses []core.NodeAddress, addrType core.NodeAddressType) (results []netip.Addr) {
+	for _, addr := range addresses {
+		if addr.Type != addrType {
+			continue
+		}
+		ip, err := netip.ParseAddr(addr.Address)
+		if err != nil {
+			continue
+		}
+		results = append(results, ip)
+	}
+	return
+}
+
+func lookupNodeIndex(ctrl cache.SharedIndexInformer, addrType core.NodeAddressType) func([]string) (results []netip.Addr, raws []string) {
+	return func(indexKeys []string) (result []netip.Addr, raw []string) {
+		var objs []interface{}
+		for _, key := range indexKeys {
+			obj, _ := ctrl.GetIndexer().ByIndex(nodeHostnameIndex, strings.ToLower(key))
+			objs = append(objs, obj...)
+		}
+		log.Debugf("Found %d matching Node objects", len(objs))
+		for _, obj := range objs {
+			node, _ := obj.(*core.Node)
+			result = append(result, fetchNodeIPsByType(node.Status.Addresses, addrType)...)
+		}
+		return
+	}
 }

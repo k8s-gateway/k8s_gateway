@@ -21,6 +21,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	fakeRest "k8s.io/client-go/rest/fake"
+	"k8s.io/client-go/tools/cache"
 	externaldnsv1 "sigs.k8s.io/external-dns/apis/v1alpha1"
 	"sigs.k8s.io/external-dns/endpoint"
 )
@@ -554,3 +555,136 @@ var testDNSEndpoints = map[string]*externaldnsv1.DNSEndpoint{
 		},
 	},
 }
+
+// testNodes maps a description to a Node fixture.
+var testNodes = map[string]*core.Node{
+	// node with both Hostname and InternalIP + ExternalIP
+	"node1": {
+		ObjectMeta: metav1.ObjectMeta{Name: "node1"},
+		Status: core.NodeStatus{
+			Addresses: []core.NodeAddress{
+				{Type: core.NodeHostName, Address: "node1"},
+				{Type: core.NodeInternalIP, Address: "10.0.0.1"},
+				{Type: core.NodeExternalIP, Address: "203.0.113.1"},
+			},
+		},
+	},
+	// dual-stack node: one Hostname, two InternalIPs (IPv4 + IPv6)
+	"node2": {
+		ObjectMeta: metav1.ObjectMeta{Name: "node2"},
+		Status: core.NodeStatus{
+			Addresses: []core.NodeAddress{
+				{Type: core.NodeHostName, Address: "node2"},
+				{Type: core.NodeInternalIP, Address: "10.0.0.2"},
+				{Type: core.NodeInternalIP, Address: "fd00::2"},
+			},
+		},
+	},
+	// node without a Hostname address — must not be indexed
+	"node-no-hostname": {
+		ObjectMeta: metav1.ObjectMeta{Name: "node-no-hostname"},
+		Status: core.NodeStatus{
+			Addresses: []core.NodeAddress{
+				{Type: core.NodeExternalIP, Address: "203.0.113.99"},
+			},
+		},
+	},
+	// ignored node — must not be indexed regardless of addresses
+	"ignored-node": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "ignored-node",
+			Labels: map[string]string{ignoreLabelKey: "true"},
+		},
+		Status: core.NodeStatus{
+			Addresses: []core.NodeAddress{
+				{Type: core.NodeHostName, Address: "ignored-node"},
+				{Type: core.NodeInternalIP, Address: "10.0.0.99"},
+			},
+		},
+	},
+}
+
+func TestFetchNodeIPsByType(t *testing.T) {
+	addrs := []core.NodeAddress{
+		{Type: core.NodeHostName, Address: "node1"},
+		{Type: core.NodeInternalIP, Address: "10.0.0.1"},
+		{Type: core.NodeInternalIP, Address: "fd00::1"},
+		{Type: core.NodeExternalIP, Address: "203.0.113.1"},
+	}
+
+	internalIPs := fetchNodeIPsByType(addrs, core.NodeInternalIP)
+	if len(internalIPs) != 2 {
+		t.Errorf("expected 2 InternalIP addresses, got %d: %v", len(internalIPs), internalIPs)
+	}
+
+	externalIPs := fetchNodeIPsByType(addrs, core.NodeExternalIP)
+	if len(externalIPs) != 1 {
+		t.Errorf("expected 1 ExternalIP address, got %d: %v", len(externalIPs), externalIPs)
+	}
+	if externalIPs[0].String() != "203.0.113.1" {
+		t.Errorf("expected ExternalIP 203.0.113.1, got %s", externalIPs[0])
+	}
+}
+
+func TestNodeHostnameIndex(t *testing.T) {
+	for name, node := range testNodes {
+		found, err := nodeHostnameIndexFunc(node)
+		if err != nil {
+			t.Errorf("node %s: unexpected error: %v", name, err)
+		}
+		if checkIgnoreLabel(node.Labels) {
+			if len(found) != 0 {
+				t.Errorf("ignored node %s should not be in index, got: %v", name, found)
+			}
+			continue
+		}
+		hasHostname := false
+		for _, addr := range node.Status.Addresses {
+			if addr.Type == core.NodeHostName {
+				hasHostname = true
+				if !isFound(addr.Address, found) {
+					t.Errorf("node %s: hostname %q not found in index %v", name, addr.Address, found)
+				}
+			}
+		}
+		if !hasHostname && len(found) != 0 {
+			t.Errorf("node %s without Hostname address should not be indexed, got: %v", name, found)
+		}
+	}
+}
+
+// TestLookupNodeIndexNoHostname is a wiring regression test: a node that has
+// only an ExternalIP address (no NodeHostName) must not be returned by
+// lookupNodeIndex regardless of the addrType requested.
+func TestLookupNodeIndexNoHostname(t *testing.T) {
+	// Build a fake informer cache that holds only the no-hostname node.
+	fakeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		nodeHostnameIndex: nodeHostnameIndexFunc,
+	})
+	noHostnameNode := testNodes["node-no-hostname"]
+	if err := fakeIndexer.Add(noHostnameNode); err != nil {
+		t.Fatalf("failed to add node to indexer: %v", err)
+	}
+
+	// Wrap in a minimal SharedIndexInformer-alike by using a fake informer.
+	// lookupNodeIndex only uses ctrl.GetIndexer(), so we can satisfy it with a
+	// thin wrapper around the Indexer we already have.
+	fakeInformer := &fakeSharedIndexInformer{indexer: fakeIndexer}
+
+	lookup := lookupNodeIndex(fakeInformer, core.NodeExternalIP)
+	results, _ := lookup([]string{"node-no-hostname"})
+	if len(results) != 0 {
+		t.Errorf("expected no results for node without NodeHostName, got: %v", results)
+	}
+}
+
+// fakeSharedIndexInformer satisfies the cache.SharedIndexInformer interface
+// used by lookupNodeIndex. Only GetIndexer is exercised by that function, so
+// the rest of the interface is satisfied by embedding the real type without
+// implementing any other methods.
+type fakeSharedIndexInformer struct {
+	cache.SharedIndexInformer
+	indexer cache.Indexer
+}
+
+func (f *fakeSharedIndexInformer) GetIndexer() cache.Indexer { return f.indexer }
