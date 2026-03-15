@@ -365,9 +365,6 @@ func TestUpdateResourcesIsolation(t *testing.T) {
 	}
 
 	for _, sr := range staticResources {
-		if &sr.lookup == nil {
-			continue
-		}
 		// The lookup field of each staticResources entry must still be noop,
 		// not the sentinel we assigned to gw.Resources entries.
 		addrs, _ := sr.lookup(nil)
