@@ -240,20 +240,6 @@ var tests = []test.Case{
 			test.A("specific-subdomain.wildcard.example.com. 60  IN  A   192.0.0.7"),
 		},
 	},
-	// Existing Endpoint | TXT record
-	{
-		Qname: "endpoint.example.com.", Qtype: dns.TypeTXT, Rcode: dns.RcodeSuccess,
-		Answer: []dns.RR{
-			test.TXT("endpoint.example.com. 60  IN  TXT   \"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor i\" \"n reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.\""),
-		},
-	},
-	// Non-existing Endpoint | TXT record
-	{
-		Qname: "endpointX.ns1.example.com.", Qtype: dns.TypeTXT, Rcode: dns.RcodeNameError,
-		Ns: []dns.RR{
-			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
-		},
-	},
 }
 
 var testsFallthrough = []FallthroughCase{
@@ -316,38 +302,12 @@ func testIngressLookup(keys []string) (results []netip.Addr, raws []string) {
 	return results, raws
 }
 
-var testDNSEndpointIndexes = map[string][]netip.Addr{
-	"domain.endpoint.example.com": {netip.MustParseAddr("192.0.4.1")},
-	"endpoint.example.com":        {netip.MustParseAddr("192.0.4.4")},
-}
-
-// test implementation for TXT multiple records does not work correctly
-// because it is confused with the concatenation of strings longer than 255 bytes
-// The loop in https://github.com/coredns/coredns/blob/master/plugin/test/helpers.go#L209
-// may be the origin of the problem
-var testDNSEndpointTxtIndexes = map[string][]string{
-	"endpoint.example.com":        {"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."},
-}
-
-func testDNSEndpointLookup(keys []string) (results []netip.Addr, raws []string) {
-	for _, key := range keys {
-		results = append(results, testDNSEndpointIndexes[strings.ToLower(key)]...)
-	}
-	for _, key := range keys {
-		raws = append(raws, testDNSEndpointTxtIndexes[strings.ToLower(key)]...)
-	}
-	return results, raws
-}
-
 func setupLookupFuncs(gw *Gateway) {
 	if resource := gw.lookupResource("Ingress"); resource != nil {
 		resource.lookup = testIngressLookup
 	}
 	if resource := gw.lookupResource("Service"); resource != nil {
 		resource.lookup = testServiceLookup
-	}
-	if resource := gw.lookupResource("DNSEndpoint"); resource != nil {
-		resource.lookup = testDNSEndpointLookup
 	}
 }
 
