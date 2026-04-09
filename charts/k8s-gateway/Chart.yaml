@@ -2,12 +2,15 @@ apiVersion: v2
 name: k8s-gateway
 description: A Helm chart for the k8s_gateway CoreDNS plugin
 type: application
-version: 3.6.0
+version: 3.6.1
 appVersion: 1.7.0
+home: https://github.com/k8s-gateway/k8s_gateway
+sources:
+  - https://github.com/k8s-gateway/k8s_gateway
 maintainers:
   - url: https://github.com/samip5
     name: samip5
 annotations:
   artifacthub.io/changes: |
-    - kind: changed
-      description: appVersion from 1.6.4 to 1.7.0
+    - kind: added
+      description: add project URL to chart metadata
