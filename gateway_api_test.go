@@ -174,7 +174,7 @@ func addHTTPRoutes(client gatewayClient.Interface) {
 func addTLSRoutes(client gatewayClient.Interface) {
 	ctx := context.TODO()
 	for _, r := range testTLSRoutes {
-		_, err := client.GatewayV1alpha2().TLSRoutes("ns1").Create(ctx, r, metav1.CreateOptions{})
+		_, err := client.GatewayV1().TLSRoutes("ns1").Create(ctx, r, metav1.CreateOptions{})
 		if err != nil {
 			log.Warningf("Failed to Create a TLSRoutes Object :%s", err)
 		}
@@ -287,15 +287,15 @@ var testHTTPRoutes = map[string]*gatewayapi_v1.HTTPRoute{
 	},
 }
 
-var testTLSRoutes = map[string]*gatewayapi_v1alpha2.TLSRoute{
+var testTLSRoutes = map[string]*gatewayapi_v1.TLSRoute{
 	"route-1.gw-1.example.com": {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "route-1",
 			Namespace: "ns1",
 		},
-		Spec: gatewayapi_v1alpha2.TLSRouteSpec{
+		Spec: gatewayapi_v1.TLSRouteSpec{
 			//ParentRefs: []gatewayapi_v1.ParentRef{},
-			Hostnames: []gatewayapi_v1alpha2.Hostname{
+			Hostnames: []gatewayapi_v1.Hostname{
 				"route-1.gw-1.example.com",
 			},
 		},
@@ -308,8 +308,8 @@ var testTLSRoutes = map[string]*gatewayapi_v1alpha2.TLSRoute{
 				ignoreLabelKey: "true",
 			},
 		},
-		Spec: gatewayapi_v1alpha2.TLSRouteSpec{
-			Hostnames: []gatewayapi_v1alpha2.Hostname{
+		Spec: gatewayapi_v1.TLSRouteSpec{
+			Hostnames: []gatewayapi_v1.Hostname{
 				"ignored-tls-route.gw-1.example.com",
 			},
 		},
