@@ -83,7 +83,7 @@ func fakeRESTClient(endpoints []*endpoint.Endpoint, apiVersion string, kind stri
 
 			case p == "/apis/"+apiVersion+"/"+strings.ToLower(kind)+"s" && m == http.MethodGet,
 				p == "/apis/"+apiVersion+"/namespaces/"+namespace+"/"+strings.ToLower(kind)+"s" && m == http.MethodGet,
-				(strings.HasPrefix(p, "/apis/"+apiVersion+"/namespaces/") && strings.HasSuffix(p, strings.ToLower(kind)+"s") && m == http.MethodGet):
+				strings.HasPrefix(p, "/apis/"+apiVersion+"/namespaces/") && strings.HasSuffix(p, strings.ToLower(kind)+"s") && m == http.MethodGet:
 				dnsEndpointList.Items = []externaldnsv1.DNSEndpoint{*dnsEndpoint}
 				return &http.Response{StatusCode: http.StatusOK, Header: defaultHeader(), Body: objBody(codec, &dnsEndpointList)}, nil
 
@@ -516,7 +516,7 @@ var testInvalidAnnotationServices = []*core.Service{
 }
 
 var testDNSEndpoints = map[string]*externaldnsv1.DNSEndpoint{
-	"dual.example.com": &externaldnsv1.DNSEndpoint{
+	"dual.example.com": {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ep1",
 			Namespace: "ns1",
@@ -536,7 +536,7 @@ var testDNSEndpoints = map[string]*externaldnsv1.DNSEndpoint{
 			},
 		},
 	},
-	"ignored.example.com": &externaldnsv1.DNSEndpoint{
+	"ignored.example.com": {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ignored-ep",
 			Namespace: "ns1",
