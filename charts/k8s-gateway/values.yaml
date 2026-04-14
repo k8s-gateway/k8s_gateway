@@ -39,6 +39,7 @@ watchedResources: ["Ingress", "Service"]
 filters:
   ingressClasses: []
   gatewayClasses: []
+  serviceLabelSelector: ""
 
 # Service name of a secondary DNS server (should be `serviceName.namespace`)
 secondary: ""

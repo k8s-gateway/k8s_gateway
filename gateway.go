@@ -63,8 +63,9 @@ type Gateway struct {
 }
 
 type ResourceFilters struct {
-	ingressClasses []string
-	gatewayClasses []string
+	ingressClasses       []string
+	gatewayClasses       []string
+	serviceLabelSelector string
 }
 
 // Create a new Gateway instance

@@ -688,3 +688,139 @@ type fakeSharedIndexInformer struct {
 }
 
 func (f *fakeSharedIndexInformer) GetIndexer() cache.Indexer { return f.indexer }
+
+func TestServiceLabelSelector(t *testing.T) {
+	ctx := context.TODO()
+
+	prodService := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-prod",
+			Namespace: "default",
+			Labels:    map[string]string{"env": "prod", "tier": "frontend"},
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "prod.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.1"}},
+			},
+		},
+	}
+
+	stagingService := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-staging",
+			Namespace: "default",
+			Labels:    map[string]string{"env": "staging", "tier": "backend"},
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "staging.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.2"}},
+			},
+		},
+	}
+
+	unlabeledService := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-unlabeled",
+			Namespace: "default",
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "unlabeled.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.3"}},
+			},
+		},
+	}
+
+	tests := []struct {
+		name          string
+		selector      string
+		expectedCount int
+		expectedNames []string
+	}{
+		{
+			name:          "empty selector returns all services",
+			selector:      "",
+			expectedCount: 3,
+			expectedNames: []string{"svc-prod", "svc-staging", "svc-unlabeled"},
+		},
+		{
+			name:          "equality selector matches one service",
+			selector:      "env=prod",
+			expectedCount: 1,
+			expectedNames: []string{"svc-prod"},
+		},
+		{
+			name:          "set-based selector matches multiple services",
+			selector:      "env in (prod,staging)",
+			expectedCount: 2,
+			expectedNames: []string{"svc-prod", "svc-staging"},
+		},
+		{
+			name:          "selector with no matches returns empty",
+			selector:      "env=dev",
+			expectedCount: 0,
+			expectedNames: []string{},
+		},
+		{
+			name:          "compound selector narrows results",
+			selector:      "env=prod,tier=frontend",
+			expectedCount: 1,
+			expectedNames: []string{"svc-prod"},
+		},
+		{
+			name:          "inequality selector excludes matching value",
+			selector:      "env!=staging",
+			expectedCount: 2,
+			expectedNames: []string{"svc-prod", "svc-unlabeled"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := fake.NewClientset(prodService, stagingService, unlabeledService)
+
+			lister := serviceLister(ctx, client, core.NamespaceAll, tc.selector)
+			result, err := lister(metav1.ListOptions{})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			serviceList, ok := result.(*core.ServiceList)
+			if !ok {
+				t.Fatalf("expected *core.ServiceList, got %T", result)
+			}
+
+			if len(serviceList.Items) != tc.expectedCount {
+				names := make([]string, len(serviceList.Items))
+				for i, svc := range serviceList.Items {
+					names[i] = svc.Name
+				}
+				t.Errorf("expected %d services, got %d: %v", tc.expectedCount, len(serviceList.Items), names)
+			}
+
+			for _, expectedName := range tc.expectedNames {
+				found := false
+				for _, svc := range serviceList.Items {
+					if svc.Name == expectedName {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected service %q not found in results", expectedName)
+				}
+			}
+		})
+	}
+}

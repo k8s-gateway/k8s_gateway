@@ -39,3 +39,72 @@ func TestSetup(t *testing.T) {
 		}
 	}
 }
+
+func TestServiceLabelSelectorParsing(t *testing.T) {
+	tests := []struct {
+		input            string
+		shouldErr        bool
+		expectedSelector string
+	}{
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelector "env=prod"
+}`,
+			shouldErr:        false,
+			expectedSelector: "env=prod",
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelector "tier in (frontend,backend)"
+}`,
+			shouldErr:        false,
+			expectedSelector: "tier in (frontend,backend)",
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelector "env=prod,tier!=cache"
+}`,
+			shouldErr:        false,
+			expectedSelector: "env=prod,tier!=cache",
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelector
+}`,
+			shouldErr: true,
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelector "!!!invalid"
+}`,
+			shouldErr: true,
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelector "a=b" "c=d"
+}`,
+			shouldErr: true,
+		},
+	}
+
+	for i, test := range tests {
+		c := caddy.NewTestController("dns", test.input)
+		gw, err := parse(c)
+
+		if test.shouldErr {
+			if err == nil {
+				t.Errorf("Test %d: Expected error for input %s", i, test.input)
+			}
+			continue
+		}
+
+		if err != nil {
+			t.Errorf("Test %d: Unexpected error for input %s: %v", i, test.input, err)
+			continue
+		}
+
+		if gw.resourceFilters.serviceLabelSelector != test.expectedSelector {
+			t.Errorf("Test %d: Expected selector %q, got %q", i, test.expectedSelector, gw.resourceFilters.serviceLabelSelector)
+		}
+	}
+}

@@ -134,8 +134,8 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 				case "Service":
 					serviceController := cache.NewSharedIndexInformer(
 						&cache.ListWatch{
-							ListFunc:  serviceLister(ctx, ctrl.client, core.NamespaceAll),
-							WatchFunc: serviceWatcher(ctx, ctrl.client, core.NamespaceAll),
+							ListFunc:  serviceLister(ctx, ctrl.client, core.NamespaceAll, originalGateway.resourceFilters.serviceLabelSelector),
+							WatchFunc: serviceWatcher(ctx, ctrl.client, core.NamespaceAll, originalGateway.resourceFilters.serviceLabelSelector),
 						},
 						&core.Service{},
 						defaultResyncPeriod,
@@ -366,8 +366,9 @@ func ingressLister(ctx context.Context, c kubernetes.Interface, ns string) func(
 	}
 }
 
-func serviceLister(ctx context.Context, c kubernetes.Interface, ns string) func(metav1.ListOptions) (runtime.Object, error) {
+func serviceLister(ctx context.Context, c kubernetes.Interface, ns string, labelSelector string) func(metav1.ListOptions) (runtime.Object, error) {
 	return func(opts metav1.ListOptions) (runtime.Object, error) {
+		opts.LabelSelector = labelSelector
 		return c.CoreV1().Services(ns).List(ctx, opts)
 	}
 }
@@ -402,8 +403,9 @@ func ingressWatcher(ctx context.Context, c kubernetes.Interface, ns string) func
 	}
 }
 
-func serviceWatcher(ctx context.Context, c kubernetes.Interface, ns string) func(metav1.ListOptions) (watch.Interface, error) {
+func serviceWatcher(ctx context.Context, c kubernetes.Interface, ns string, labelSelector string) func(metav1.ListOptions) (watch.Interface, error) {
 	return func(opts metav1.ListOptions) (watch.Interface, error) {
+		opts.LabelSelector = labelSelector
 		return c.CoreV1().Services(ns).Watch(ctx, opts)
 	}
 }

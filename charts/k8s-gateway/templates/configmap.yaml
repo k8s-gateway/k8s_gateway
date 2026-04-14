@@ -36,6 +36,9 @@ data:
           {{- if .Values.filters.gatewayClasses }}
           gatewayClasses {{ join " " .Values.filters.gatewayClasses }}
           {{- end }}
+          {{- if .Values.filters.serviceLabelSelector }}
+          serviceLabelSelector {{ .Values.filters.serviceLabelSelector | quote }}
+          {{- end }}
           {{- if .Values.fallthrough.enabled }}
           fallthrough {{- range .Values.fallthrough.zones }} {{ . }} {{- end }}
           {{- end }}

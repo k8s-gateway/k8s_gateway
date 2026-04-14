@@ -58,6 +58,7 @@ k8s_gateway [ZONES...]
     resources [RESOURCES...]
     ingressClasses [CLASSES...]
     gatewayClasses [CLASSES...]
+    serviceLabelSelector SELECTOR
     ttl TTL
     apex APEX
     secondary SECONDARY
@@ -69,6 +70,7 @@ k8s_gateway [ZONES...]
 * `resources` a subset of supported Kubernetes resources to watch. Available options are `[ Ingress | Service | HTTPRoute | TLSRoute | GRPCRoute | DNSEndpoint ]`. If no resources are specified only `Ingress` and `Service` will be monitored
 * `ingressClasses` to filter `Ingress` resources by `ingressClassName` values. Watches all by default.
 * `gatewayClasses` to filter `Gateway` resources by `gatewayClassName` values. Watches all by default.
+* `serviceLabelSelector` to filter `Service` resources by labels using a [Kubernetes label selector](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors) string. Watches all by default.
 * `ttl` can be used to override the default TTL value of 60 seconds.
 * `apex` can be used to override the default apex record value of `{ReleaseName}-k8s-gateway.{Namespace}`
 * `secondary` can be used to specify the optional apex record value of a peer nameserver running in the cluster (see `Dual Nameserver Deployment` section below).

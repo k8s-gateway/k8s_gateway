@@ -8,6 +8,7 @@ import (
 	"github.com/coredns/coredns/core/dnsserver"
 	"github.com/coredns/coredns/plugin"
 	clog "github.com/coredns/coredns/plugin/pkg/log"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 var (
@@ -119,6 +120,16 @@ func parse(c *caddy.Controller) (*Gateway, error) {
 					return nil, c.Errf("Incorrectly formatted 'gatewayClasses' parameter")
 				}
 				gw.resourceFilters.gatewayClasses = args
+
+			case "serviceLabelSelector":
+				args := c.RemainingArgs()
+				if len(args) != 1 {
+					return nil, c.Errf("serviceLabelSelector requires exactly one argument (a label selector string)")
+				}
+				if _, err := labels.Parse(args[0]); err != nil {
+					return nil, c.Errf("invalid serviceLabelSelector: %v", err)
+				}
+				gw.resourceFilters.serviceLabelSelector = args[0]
 
 			case "nodeAddressType":
 				args := c.RemainingArgs()
