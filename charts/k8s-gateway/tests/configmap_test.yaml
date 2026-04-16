@@ -206,6 +206,98 @@ tests:
                 reload
                 loadbalance
               }
+  - it: Should render ConfigMap with single serviceLabelSelector
+    set:
+      domain: "example.com"
+      watchedResources:
+        - Service
+      ttl: 300
+      filters:
+        serviceLabelSelectors:
+          - "env=prod"
+    template: templates/configmap.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - matchRegex:
+          path: data.Corefile
+          pattern: 'serviceLabelSelectors "env=prod"'
+      - equal:
+          path: data.Corefile
+          value: |-
+            .:1053 {
+                k8s_gateway example.com {
+                  apex RELEASE-NAME-k8s-gateway.NAMESPACE
+                  ttl 300
+                  resources Service
+                  serviceLabelSelectors "env=prod"
+                }
+                log
+                errors
+                health {
+                  lameduck 5s
+                }
+                ready
+                prometheus 0.0.0.0:9153
+                forward . /etc/resolv.conf
+                loop
+                reload
+                loadbalance
+              }
+  - it: Should render ConfigMap with multiple serviceLabelSelectors
+    set:
+      domain: "example.com"
+      watchedResources:
+        - Service
+      ttl: 300
+      filters:
+        serviceLabelSelectors:
+          - "zone=kitchen,tier=frontend"
+          - "zone=bedroom,tier=backend"
+    template: templates/configmap.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - matchRegex:
+          path: data.Corefile
+          pattern: 'serviceLabelSelectors "zone=kitchen,tier=frontend" "zone=bedroom,tier=backend"'
+      - equal:
+          path: data.Corefile
+          value: |-
+            .:1053 {
+                k8s_gateway example.com {
+                  apex RELEASE-NAME-k8s-gateway.NAMESPACE
+                  ttl 300
+                  resources Service
+                  serviceLabelSelectors "zone=kitchen,tier=frontend" "zone=bedroom,tier=backend"
+                }
+                log
+                errors
+                health {
+                  lameduck 5s
+                }
+                ready
+                prometheus 0.0.0.0:9153
+                forward . /etc/resolv.conf
+                loop
+                reload
+                loadbalance
+              }
+  - it: Should not render serviceLabelSelectors when empty
+    set:
+      domain: "example.com"
+      watchedResources:
+        - Service
+      ttl: 300
+      filters:
+        serviceLabelSelectors: []
+    template: templates/configmap.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - notMatchRegex:
+          path: data.Corefile
+          pattern: "serviceLabelSelectors"
   - it: Should render ConfigMap without scheme prefix when empty
     set:
       domain: "example.com"
