@@ -42,48 +42,63 @@ func TestSetup(t *testing.T) {
 
 func TestServiceLabelSelectorParsing(t *testing.T) {
 	tests := []struct {
-		input            string
-		shouldErr        bool
-		expectedSelector string
+		input             string
+		shouldErr         bool
+		expectedSelectors []string
 	}{
 		{
 			input: `k8s_gateway example.org {
-	serviceLabelSelector "env=prod"
+	serviceLabelSelectors "env=prod"
 }`,
-			shouldErr:        false,
-			expectedSelector: "env=prod",
+			shouldErr:         false,
+			expectedSelectors: []string{"env=prod"},
 		},
 		{
 			input: `k8s_gateway example.org {
-	serviceLabelSelector "tier in (frontend,backend)"
+	serviceLabelSelectors "tier in (frontend,backend)"
 }`,
-			shouldErr:        false,
-			expectedSelector: "tier in (frontend,backend)",
+			shouldErr:         false,
+			expectedSelectors: []string{"tier in (backend,frontend)"},
 		},
 		{
 			input: `k8s_gateway example.org {
-	serviceLabelSelector "env=prod,tier!=cache"
+	serviceLabelSelectors "env=prod,tier!=cache"
 }`,
-			shouldErr:        false,
-			expectedSelector: "env=prod,tier!=cache",
+			shouldErr:         false,
+			expectedSelectors: []string{"env=prod,tier!=cache"},
 		},
 		{
 			input: `k8s_gateway example.org {
-	serviceLabelSelector
+	serviceLabelSelectors
 }`,
 			shouldErr: true,
 		},
 		{
 			input: `k8s_gateway example.org {
-	serviceLabelSelector "!!!invalid"
+	serviceLabelSelectors "!!!invalid"
 }`,
 			shouldErr: true,
 		},
 		{
 			input: `k8s_gateway example.org {
-	serviceLabelSelector "a=b" "c=d"
+	serviceLabelSelectors "a=b" "c=d"
 }`,
-			shouldErr: true,
+			shouldErr:         false,
+			expectedSelectors: []string{"a=b", "c=d"},
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelectors "env = prod"
+}`,
+			shouldErr:         false,
+			expectedSelectors: []string{"env=prod"},
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelectors "zone=kitchen,tier=frontend" "zone=bedroom,tier=backend"
+}`,
+			shouldErr:         false,
+			expectedSelectors: []string{"tier=frontend,zone=kitchen", "tier=backend,zone=bedroom"},
 		},
 	}
 
@@ -103,8 +118,14 @@ func TestServiceLabelSelectorParsing(t *testing.T) {
 			continue
 		}
 
-		if gw.resourceFilters.serviceLabelSelector != test.expectedSelector {
-			t.Errorf("Test %d: Expected selector %q, got %q", i, test.expectedSelector, gw.resourceFilters.serviceLabelSelector)
+		if len(gw.resourceFilters.serviceLabelSelectors) != len(test.expectedSelectors) {
+			t.Errorf("Test %d: Expected %d selectors, got %d: %v", i, len(test.expectedSelectors), len(gw.resourceFilters.serviceLabelSelectors), gw.resourceFilters.serviceLabelSelectors)
+			continue
+		}
+		for j, expected := range test.expectedSelectors {
+			if gw.resourceFilters.serviceLabelSelectors[j] != expected {
+				t.Errorf("Test %d: Selector %d: expected %q, got %q", i, j, expected, gw.resourceFilters.serviceLabelSelectors[j])
+			}
 		}
 	}
 }

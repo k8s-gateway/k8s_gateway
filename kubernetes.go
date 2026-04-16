@@ -132,17 +132,25 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 					log.Infof("Ingress controller initialized")
 
 				case "Service":
-					serviceController := cache.NewSharedIndexInformer(
-						&cache.ListWatch{
-							ListFunc:  serviceLister(ctx, ctrl.client, core.NamespaceAll, originalGateway.resourceFilters.serviceLabelSelector),
-							WatchFunc: serviceWatcher(ctx, ctrl.client, core.NamespaceAll, originalGateway.resourceFilters.serviceLabelSelector),
-						},
-						&core.Service{},
-						defaultResyncPeriod,
-						cache.Indexers{serviceHostnameIndex: serviceHostnameIndexFunc},
-					)
-					resource.lookup = lookupServiceIndex(serviceController)
-					ctrl.controllers = append(ctrl.controllers, serviceController)
+					selectors := originalGateway.resourceFilters.serviceLabelSelectors
+					if len(selectors) == 0 {
+						selectors = []string{""}
+					}
+					var serviceControllers []cache.SharedIndexInformer
+					for _, sel := range selectors {
+						sc := cache.NewSharedIndexInformer(
+							&cache.ListWatch{
+								ListFunc:  serviceLister(ctx, ctrl.client, core.NamespaceAll, sel),
+								WatchFunc: serviceWatcher(ctx, ctrl.client, core.NamespaceAll, sel),
+							},
+							&core.Service{},
+							defaultResyncPeriod,
+							cache.Indexers{serviceHostnameIndex: serviceHostnameIndexFunc},
+						)
+						serviceControllers = append(serviceControllers, sc)
+						ctrl.controllers = append(ctrl.controllers, sc)
+					}
+					resource.lookup = lookupServiceIndex(serviceControllers)
 					log.Infof("Service controller initialized")
 				}
 			}
@@ -599,12 +607,26 @@ func checkDomainValid(domain string) bool {
 	return false
 }
 
-func lookupServiceIndex(ctrl cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string) {
+func lookupServiceIndex(controllers []cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string) {
 	return func(indexKeys []string) (result []netip.Addr, raw []string) {
+		seen := make(map[string]struct{})
 		var objs []interface{}
-		for _, key := range indexKeys {
-			obj, _ := ctrl.GetIndexer().ByIndex(serviceHostnameIndex, strings.ToLower(key))
-			objs = append(objs, obj...)
+		for _, ctrl := range controllers {
+			for _, key := range indexKeys {
+				obj, _ := ctrl.GetIndexer().ByIndex(serviceHostnameIndex, strings.ToLower(key))
+				for _, o := range obj {
+					svc, ok := o.(*core.Service)
+					if !ok {
+						continue
+					}
+					nsName := svc.Namespace + "/" + svc.Name
+					if _, dup := seen[nsName]; dup {
+						continue
+					}
+					seen[nsName] = struct{}{}
+					objs = append(objs, o)
+				}
+			}
 		}
 		log.Debugf("Found %d matching Service objects", len(objs))
 		for _, obj := range objs {

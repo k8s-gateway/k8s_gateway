@@ -121,15 +121,18 @@ func parse(c *caddy.Controller) (*Gateway, error) {
 				}
 				gw.resourceFilters.gatewayClasses = args
 
-			case "serviceLabelSelector":
+			case "serviceLabelSelectors":
 				args := c.RemainingArgs()
-				if len(args) != 1 {
-					return nil, c.Errf("serviceLabelSelector requires exactly one argument (a label selector string)")
+				if len(args) == 0 {
+					return nil, c.Errf("serviceLabelSelectors requires at least one argument (a label selector string)")
 				}
-				if _, err := labels.Parse(args[0]); err != nil {
-					return nil, c.Errf("invalid serviceLabelSelector: %v", err)
+				for _, arg := range args {
+					sel, err := labels.Parse(arg)
+					if err != nil {
+						return nil, c.Errf("invalid serviceLabelSelectors %q: %v", arg, err)
+					}
+					gw.resourceFilters.serviceLabelSelectors = append(gw.resourceFilters.serviceLabelSelectors, sel.String())
 				}
-				gw.resourceFilters.serviceLabelSelector = args[0]
 
 			case "nodeAddressType":
 				args := c.RemainingArgs()

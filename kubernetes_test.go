@@ -592,7 +592,7 @@ var testNodes = map[string]*core.Node{
 	// ignored node — must not be indexed regardless of addresses
 	"ignored-node": {
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "ignored-node",
+			Name:   "ignored-node",
 			Labels: map[string]string{ignoreLabelKey: "true"},
 		},
 		Status: core.NodeStatus{
@@ -823,4 +823,117 @@ func TestServiceLabelSelector(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMultiSelectorServiceLookup(t *testing.T) {
+	kitchenFrontend := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-kitchen-fe",
+			Namespace: "default",
+			Labels:    map[string]string{"zone": "kitchen", "tier": "frontend"},
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "kitchen-fe.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.1"}},
+			},
+		},
+	}
+
+	bedroomBackend := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-bedroom-be",
+			Namespace: "default",
+			Labels:    map[string]string{"zone": "bedroom", "tier": "backend"},
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "bedroom-be.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.2"}},
+			},
+		},
+	}
+
+	garageService := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-garage",
+			Namespace: "default",
+			Labels:    map[string]string{"zone": "garage", "tier": "frontend"},
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "garage.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.3"}},
+			},
+		},
+	}
+
+	// Build two indexers with disjoint selectors, simulating what kubernetes.go
+	// does when multiple serviceLabelSelectors are configured.
+	// Selector 1: zone=kitchen,tier=frontend -> matches kitchenFrontend
+	// Selector 2: zone=bedroom,tier=backend  -> matches bedroomBackend
+	// garageService matches neither.
+
+	indexer1 := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		serviceHostnameIndex: serviceHostnameIndexFunc,
+	})
+	if err := indexer1.Add(kitchenFrontend); err != nil {
+		t.Fatalf("failed to add service to indexer1: %v", err)
+	}
+
+	indexer2 := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		serviceHostnameIndex: serviceHostnameIndexFunc,
+	})
+	if err := indexer2.Add(bedroomBackend); err != nil {
+		t.Fatalf("failed to add service to indexer2: %v", err)
+	}
+
+	_ = garageService // not added to any indexer
+
+	controllers := []cache.SharedIndexInformer{
+		&fakeSharedIndexInformer{indexer: indexer1},
+		&fakeSharedIndexInformer{indexer: indexer2},
+	}
+
+	lookup := lookupServiceIndex(controllers)
+
+	t.Run("union of disjoint selectors returns both services", func(t *testing.T) {
+		// Query for kitchen-fe hostname
+		results1, _ := lookup([]string{"kitchen-fe.example.com"})
+		if len(results1) != 1 || results1[0].String() != "10.0.0.1" {
+			t.Errorf("expected [10.0.0.1], got %v", results1)
+		}
+
+		// Query for bedroom-be hostname
+		results2, _ := lookup([]string{"bedroom-be.example.com"})
+		if len(results2) != 1 || results2[0].String() != "10.0.0.2" {
+			t.Errorf("expected [10.0.0.2], got %v", results2)
+		}
+
+		// Query for garage hostname (not in any indexer)
+		results3, _ := lookup([]string{"garage.example.com"})
+		if len(results3) != 0 {
+			t.Errorf("expected no results for garage, got %v", results3)
+		}
+	})
+
+	t.Run("deduplication across overlapping informers", func(t *testing.T) {
+		// Add the same service to both indexers to verify dedup
+		if err := indexer2.Add(kitchenFrontend); err != nil {
+			t.Fatalf("failed to add duplicate: %v", err)
+		}
+		results, _ := lookup([]string{"kitchen-fe.example.com"})
+		if len(results) != 1 {
+			t.Errorf("expected 1 result after dedup, got %d: %v", len(results), results)
+		}
+	})
 }

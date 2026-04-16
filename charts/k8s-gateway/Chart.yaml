@@ -13,4 +13,4 @@ maintainers:
 annotations:
   artifacthub.io/changes: |
     - kind: added
-      description: add serviceLabelSelector filter for label-based Service filtering
+      description: support multiple serviceLabelSelectors for OR-of-ANDs filtering
