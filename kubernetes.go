@@ -12,6 +12,7 @@ import (
 	"github.com/miekg/dns"
 	core "k8s.io/api/core/v1"
 	networking "k8s.io/api/networking/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	meta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,10 +22,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
-	externaldnsv1 "sigs.k8s.io/external-dns/apis/v1alpha1"
-	"sigs.k8s.io/external-dns/source"
 	gatewayapi_v1 "sigs.k8s.io/gateway-api/apis/v1"
-	gatewayapi_v1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 	gatewayClient "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned"
 )
 
@@ -36,18 +34,14 @@ const (
 	httpRouteHostnameIndex           = "httpRouteHostname"
 	tlsRouteHostnameIndex            = "tlsRouteHostname"
 	grpcRouteHostnameIndex           = "grpcRouteHostname"
-	externalDNSHostnameIndex         = "externalDNSHostname"
 	nodeHostnameIndex                = "nodeHostname"
 	hostnameAnnotationKey            = "coredns.io/hostname"
 	externalDnsHostnameAnnotationKey = "external-dns.alpha.kubernetes.io/hostname"
-	externalDNSEndpointGroup         = "externaldns.k8s.io/v1alpha1"
-	externalDNSEndpointKind          = "DNSEndpoint"
 	ignoreLabelKey                   = "k8s-gateway.dns/ignore"
 )
 
 var (
-	apiextensionsClient  *apiextensionsclientset.Clientset
-	externaldnsCRDClient rest.Interface
+	apiextensionsClient *apiextensionsclientset.Clientset
 )
 
 // KubeController stores the current runtime configuration and cache
@@ -105,7 +99,7 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 				log.Infof("HTTPRoute controller initialized")
 			}
 		}
-		if slices.Contains(configuredResources, "TLSRoute") && crdExists(apiextensionsClient, "tlsroutes.gateway.networking.k8s.io") {
+		if slices.Contains(configuredResources, "TLSRoute") && crdServesVersion(apiextensionsClient, "tlsroutes.gateway.networking.k8s.io", "v1") {
 			if resource := originalGateway.lookupResource("TLSRoute"); resource != nil {
 				tlsRouteController := initializeTLSRouteController(ctx, ctrl, gatewayController, originalGateway)
 				ctrl.controllers = append(ctrl.controllers, tlsRouteController)
@@ -148,55 +142,40 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 					log.Infof("Ingress controller initialized")
 
 				case "Service":
-					serviceController := cache.NewSharedIndexInformer(
-						&cache.ListWatch{
-							ListFunc:  serviceLister(ctx, ctrl.client, core.NamespaceAll),
-							WatchFunc: serviceWatcher(ctx, ctrl.client, core.NamespaceAll),
-						},
-						&core.Service{},
-						defaultResyncPeriod,
-						cache.Indexers{serviceHostnameIndex: serviceHostnameIndexFunc},
-					)
-					// Add event handlers to mark gateway as dirty when resources change
-					if _, err := serviceController.AddEventHandler(cache.ResourceEventHandlerFuncs{
-						AddFunc:    func(obj interface{}) { originalGateway.markDirty() },
-						UpdateFunc: func(oldObj, newObj interface{}) { originalGateway.markDirty() },
-						DeleteFunc: func(obj interface{}) { originalGateway.markDirty() },
-					}); err != nil {
-						log.Warningf("Failed to add event handler to service controller: %v", err)
+					selectors := originalGateway.resourceFilters.serviceLabelSelectors
+					if len(selectors) == 0 {
+						selectors = []string{""}
 					}
-					resource.lookup = lookupServiceIndex(serviceController)
-					ctrl.controllers = append(ctrl.controllers, serviceController)
+					var serviceControllers []cache.SharedIndexInformer
+					for _, sel := range selectors {
+						sc := cache.NewSharedIndexInformer(
+							&cache.ListWatch{
+								ListFunc:  serviceLister(ctx, ctrl.client, core.NamespaceAll, sel),
+								WatchFunc: serviceWatcher(ctx, ctrl.client, core.NamespaceAll, sel),
+							},
+							&core.Service{},
+							defaultResyncPeriod,
+						cache.Indexers{serviceHostnameIndex: serviceHostnameIndexFunc},
+						)
+						// Add event handlers to mark gateway as dirty when resources change
+						if _, err := sc.AddEventHandler(cache.ResourceEventHandlerFuncs{
+							AddFunc:    func(obj interface{}) { originalGateway.markDirty() },
+							UpdateFunc: func(oldObj, newObj interface{}) { originalGateway.markDirty() },
+							DeleteFunc: func(obj interface{}) { originalGateway.markDirty() },
+						}); err != nil {
+							log.Warningf("Failed to add event handler to service controller: %v", err)
+						}
+						serviceControllers = append(serviceControllers, sc)
+						ctrl.controllers = append(ctrl.controllers, sc)
+					}
+					resource.lookup = lookupServiceIndex(serviceControllers)
 					log.Infof("Service controller initialized")
 				}
 			}
 		}
 	}
 
-	if crdExists(apiextensionsClient, "dnsendpoints.externaldns.k8s.io") && slices.Contains(dereferenceStrings(originalGateway.ConfiguredResources), "DNSEndpoint") {
-		if resource := originalGateway.lookupResource("DNSEndpoint"); resource != nil {
-			dnsEndpointController := cache.NewSharedIndexInformer(
-				&cache.ListWatch{
-					WatchFunc: dnsEndpointWatcher(ctx, core.NamespaceAll),
-					ListFunc:  dnsEndpointLister(ctx, core.NamespaceAll),
-				},
-				&externaldnsv1.DNSEndpoint{},
-				defaultResyncPeriod,
-				cache.Indexers{externalDNSHostnameIndex: dnsEndpointTargetIndexFunc},
-			)
-			// Add event handlers to mark gateway as dirty when resources change
-			if _, err := dnsEndpointController.AddEventHandler(cache.ResourceEventHandlerFuncs{
-				AddFunc:    func(obj interface{}) { originalGateway.markDirty() },
-				UpdateFunc: func(oldObj, newObj interface{}) { originalGateway.markDirty() },
-				DeleteFunc: func(obj interface{}) { originalGateway.markDirty() },
-			}); err != nil {
-				log.Warningf("Failed to add event handler to dnsEndpoint controller: %v", err)
-			}
-			resource.lookup = lookupDNSEndpoint(dnsEndpointController)
-			ctrl.controllers = append(ctrl.controllers, dnsEndpointController)
-			log.Infof("DNSEndpoint controller initialized")
-		}
-	}
+	initializeDNSEndpointController(ctx, ctrl, originalGateway)
 
 	if slices.Contains(dereferenceStrings(originalGateway.ConfiguredResources), "Node") {
 		if resource := originalGateway.lookupResource("Node"); resource != nil {
@@ -250,7 +229,7 @@ func initializeTLSRouteController(ctx context.Context, ctrl *KubeController, gat
 			ListFunc:  tlsRouteLister(ctx, ctrl.gwClient, core.NamespaceAll),
 			WatchFunc: tlsRouteWatcher(ctx, ctrl.gwClient, core.NamespaceAll),
 		},
-		&gatewayapi_v1alpha2.TLSRoute{},
+		&gatewayapi_v1.TLSRoute{},
 		defaultResyncPeriod,
 		cache.Indexers{tlsRouteHostnameIndex: tlsRouteHostnameIndexFunc},
 	)
@@ -345,9 +324,9 @@ func (gw *Gateway) RunKubeController(ctx context.Context) error {
 		return err
 	}
 
-	externaldnsCRDClient, _, err = source.NewCRDClientForAPIVersionKind(kubeClient, gw.configFile, "", externalDNSEndpointGroup, externalDNSEndpointKind)
+	externaldnsCRDClient, err = newExternalDNSRESTClient(config)
 	if err != nil {
-		log.Warningf("crd %s not found. ignoring and continuing execution", externalDNSEndpointGroup)
+		log.Warningf("failed to build external-dns REST client: %s, ignoring and continuing execution", err)
 	}
 
 	gw.Controller = newKubeController(ctx, kubeClient, gwAPIClient, gw)
@@ -357,13 +336,48 @@ func (gw *Gateway) RunKubeController(ctx context.Context) error {
 }
 
 func crdExists(clientset *apiextensionsclientset.Clientset, crdName string) bool {
-	_, err := clientset.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), crdName, metav1.GetOptions{})
+	crd, err := clientset.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), crdName, metav1.GetOptions{})
 	if err != nil {
 		log.Warningf("error getting crd %s, error: %s", crdName, err.Error())
-	} else {
-		log.Infof("crd %s found", crdName)
+		return false
 	}
-	return err == nil
+	for _, cond := range crd.Status.Conditions {
+		if cond.Type == apiextensionsv1.Established && cond.Status == apiextensionsv1.ConditionTrue {
+			log.Infof("crd %s found and established", crdName)
+			return true
+		}
+	}
+	log.Warningf("crd %s found but not established", crdName)
+	return false
+}
+
+// crdServesVersion returns true if the given CRD is established and serves
+// the specified API version (e.g. "v1" or "v1alpha2").
+func crdServesVersion(clientset *apiextensionsclientset.Clientset, crdName, version string) bool {
+	crd, err := clientset.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), crdName, metav1.GetOptions{})
+	if err != nil {
+		log.Warningf("error getting crd %s, error: %s", crdName, err.Error())
+		return false
+	}
+	established := false
+	for _, cond := range crd.Status.Conditions {
+		if cond.Type == apiextensionsv1.Established && cond.Status == apiextensionsv1.ConditionTrue {
+			established = true
+			break
+		}
+	}
+	if !established {
+		log.Warningf("crd %s found but not established", crdName)
+		return false
+	}
+	for _, v := range crd.Spec.Versions {
+		if v.Name == version && v.Served {
+			log.Infof("crd %s/%s found, established and served", crdName, version)
+			return true
+		}
+	}
+	log.Warningf("crd %s found but does not serve version %s", crdName, version)
+	return false
 }
 
 func (gw *Gateway) getClientConfig() (*rest.Config, error) {
@@ -400,7 +414,7 @@ func httpRouteLister(ctx context.Context, c gatewayClient.Interface, ns string) 
 
 func tlsRouteLister(ctx context.Context, c gatewayClient.Interface, ns string) func(metav1.ListOptions) (runtime.Object, error) {
 	return func(opts metav1.ListOptions) (runtime.Object, error) {
-		return c.GatewayV1alpha2().TLSRoutes(ns).List(ctx, opts)
+		return c.GatewayV1().TLSRoutes(ns).List(ctx, opts)
 	}
 }
 
@@ -422,8 +436,9 @@ func ingressLister(ctx context.Context, c kubernetes.Interface, ns string) func(
 	}
 }
 
-func serviceLister(ctx context.Context, c kubernetes.Interface, ns string) func(metav1.ListOptions) (runtime.Object, error) {
+func serviceLister(ctx context.Context, c kubernetes.Interface, ns string, labelSelector string) func(metav1.ListOptions) (runtime.Object, error) {
 	return func(opts metav1.ListOptions) (runtime.Object, error) {
+		opts.LabelSelector = labelSelector
 		return c.CoreV1().Services(ns).List(ctx, opts)
 	}
 }
@@ -436,7 +451,7 @@ func httpRouteWatcher(ctx context.Context, c gatewayClient.Interface, ns string)
 
 func tlsRouteWatcher(ctx context.Context, c gatewayClient.Interface, ns string) func(metav1.ListOptions) (watch.Interface, error) {
 	return func(opts metav1.ListOptions) (watch.Interface, error) {
-		return c.GatewayV1alpha2().TLSRoutes(ns).Watch(ctx, opts)
+		return c.GatewayV1().TLSRoutes(ns).Watch(ctx, opts)
 	}
 }
 
@@ -458,35 +473,13 @@ func ingressWatcher(ctx context.Context, c kubernetes.Interface, ns string) func
 	}
 }
 
-func serviceWatcher(ctx context.Context, c kubernetes.Interface, ns string) func(metav1.ListOptions) (watch.Interface, error) {
+func serviceWatcher(ctx context.Context, c kubernetes.Interface, ns string, labelSelector string) func(metav1.ListOptions) (watch.Interface, error) {
 	return func(opts metav1.ListOptions) (watch.Interface, error) {
+		opts.LabelSelector = labelSelector
 		return c.CoreV1().Services(ns).Watch(ctx, opts)
 	}
 }
 
-func dnsEndpointWatcher(ctx context.Context, ns string) func(metav1.ListOptions) (watch.Interface, error) {
-	return func(opts metav1.ListOptions) (watch.Interface, error) {
-		opts.Watch = true
-		return externaldnsCRDClient.Get().
-			Resource("dnsendpoints").
-			Namespace(ns).
-			VersionedParams(&opts, metav1.ParameterCodec).
-			Watch(ctx)
-	}
-}
-
-func dnsEndpointLister(ctx context.Context, ns string) func(metav1.ListOptions) (runtime.Object, error) {
-	return func(opts metav1.ListOptions) (runtime.Object, error) {
-		return externaldnsCRDClient.Get().
-			Resource("dnsendpoints").
-			Namespace(ns).
-			VersionedParams(&opts, metav1.ParameterCodec).
-			Do(ctx).
-			Get()
-	}
-}
-
-// indexes based on "namespace/name" as the key
 func gatewayIndexFunc(obj interface{}) ([]string, error) {
 	metaObj, err := meta.Accessor(obj)
 	if err != nil {
@@ -516,7 +509,7 @@ func httpRouteHostnameIndexFunc(obj interface{}) ([]string, error) {
 }
 
 func tlsRouteHostnameIndexFunc(obj interface{}) ([]string, error) {
-	tlsRoute, ok := obj.(*gatewayapi_v1alpha2.TLSRoute)
+	tlsRoute, ok := obj.(*gatewayapi_v1.TLSRoute)
 	if !ok {
 		return []string{}, nil
 	}
@@ -610,26 +603,6 @@ func splitHostnameAnnotation(annotation string) []string {
 	return strings.Split(strings.ReplaceAll(annotation, " ", ""), ",")
 }
 
-func dnsEndpointTargetIndexFunc(obj interface{}) ([]string, error) {
-	dnsEndpoint, ok := obj.(*externaldnsv1.DNSEndpoint)
-	if !ok {
-		return []string{}, nil
-	}
-
-	// Check if object should be ignored
-	if checkIgnoreLabel(dnsEndpoint.Labels) {
-		log.Debugf("Ignoring dnsEndpoint %s due to %s label", dnsEndpoint.Name, ignoreLabelKey)
-		return []string{}, nil
-	}
-
-	var hostnames []string
-	for _, endpoint := range dnsEndpoint.Spec.Endpoints {
-		log.Debugf("Adding index %s for DNSEndpoint %s", endpoint.DNSName, dnsEndpoint.Name)
-		hostnames = append(hostnames, endpoint.DNSName)
-	}
-	return hostnames, nil
-}
-
 func checkServiceAnnotations(service *core.Service, annotations ...string) (string, bool) {
 	for _, annotation := range annotations {
 		if annotationValue, exists := service.Annotations[annotation]; exists {
@@ -653,12 +626,26 @@ func checkDomainValid(domain string) bool {
 	return false
 }
 
-func lookupServiceIndex(ctrl cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string) {
+func lookupServiceIndex(controllers []cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string) {
 	return func(indexKeys []string) (result []netip.Addr, raw []string) {
+		seen := make(map[string]struct{})
 		var objs []interface{}
-		for _, key := range indexKeys {
-			obj, _ := ctrl.GetIndexer().ByIndex(serviceHostnameIndex, strings.ToLower(key))
-			objs = append(objs, obj...)
+		for _, ctrl := range controllers {
+			for _, key := range indexKeys {
+				obj, _ := ctrl.GetIndexer().ByIndex(serviceHostnameIndex, strings.ToLower(key))
+				for _, o := range obj {
+					svc, ok := o.(*core.Service)
+					if !ok {
+						continue
+					}
+					nsName := svc.Namespace + "/" + svc.Name
+					if _, dup := seen[nsName]; dup {
+						continue
+					}
+					seen[nsName] = struct{}{}
+					objs = append(objs, o)
+				}
+			}
 		}
 		log.Debugf("Found %d matching Service objects", len(objs))
 		for _, obj := range objs {
@@ -705,7 +692,7 @@ func lookupTLSRouteIndex(tls, gw cache.SharedIndexInformer, gwclasses []string) 
 		log.Debugf("Found %d matching tlsRoute objects", len(objs))
 
 		for _, obj := range objs {
-			tlsRoute, _ := obj.(*gatewayapi_v1alpha2.TLSRoute)
+			tlsRoute, _ := obj.(*gatewayapi_v1.TLSRoute)
 			result = append(result, lookupGateways(gw, tlsRoute.Spec.ParentRefs, tlsRoute.Namespace, gwclasses)...)
 		}
 		return
@@ -774,36 +761,6 @@ func lookupIngressIndex(ctrl cache.SharedIndexInformer, ingclasses []string) fun
 		}
 
 		return
-	}
-}
-
-func lookupDNSEndpoint(ctrl cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string) {
-	return func(indexKeys []string) (result []netip.Addr, raw []string) {
-		var objs []interface{}
-		for _, key := range indexKeys {
-			obj, _ := ctrl.GetIndexer().ByIndex(externalDNSHostnameIndex, strings.ToLower(key))
-			objs = append(objs, obj...)
-		}
-		log.Debugf("Found %d matching DNSEndpoint objects", len(objs))
-		for _, obj := range objs {
-			dnsEndpoint, _ := obj.(*externaldnsv1.DNSEndpoint)
-
-			for _, endpoint := range dnsEndpoint.Spec.Endpoints {
-				for _, target := range endpoint.Targets {
-					if endpoint.RecordType == "A" || endpoint.RecordType == "AAAA" {
-						addr, err := netip.ParseAddr(target)
-						if err != nil {
-							continue
-						}
-						result = append(result, addr)
-					}
-					if endpoint.RecordType == "TXT" {
-						raw = append(raw, target)
-					}
-				}
-			}
-		}
-		return result, raw
 	}
 }
 

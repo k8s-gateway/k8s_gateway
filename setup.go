@@ -8,6 +8,7 @@ import (
 	"github.com/coredns/coredns/core/dnsserver"
 	"github.com/coredns/coredns/plugin"
 	clog "github.com/coredns/coredns/plugin/pkg/log"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 var (
@@ -154,6 +155,22 @@ func parse(c *caddy.Controller) (*Gateway, error) {
 			gw.soaRetry = uint32(retry)
 			gw.soaExpire = uint32(expire)
 
+
+			case "serviceLabelSelectors":
+				args := c.RemainingArgs()
+				if len(args) == 0 {
+					return nil, c.Errf("serviceLabelSelectors requires at least one argument (a label selector string)")
+				}
+				for _, arg := range args {
+					if arg == "" {
+						return nil, c.Errf("serviceLabelSelectors does not accept empty strings")
+					}
+					sel, err := labels.Parse(arg)
+					if err != nil {
+						return nil, c.Errf("invalid serviceLabelSelectors %q: %v", arg, err)
+					}
+					gw.resourceFilters.serviceLabelSelectors = append(gw.resourceFilters.serviceLabelSelectors, sel.String())
+				}
 
 			case "nodeAddressType":
 				args := c.RemainingArgs()

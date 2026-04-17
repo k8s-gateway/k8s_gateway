@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/coredns/caddy"
@@ -35,6 +36,115 @@ func TestSetup(t *testing.T) {
 		if !test.shouldErr && test.expectedZone != "" {
 			if test.expectedZones != len(gw.Zones) {
 				t.Errorf("Test %d, expected zone %q for input %s, got: %q", i, test.expectedZone, test.input, gw.Zones[0])
+			}
+		}
+	}
+}
+
+func TestServiceLabelSelectorParsing(t *testing.T) {
+	tests := []struct {
+		input             string
+		shouldErr         bool
+		expectedErr       string
+		expectedSelectors []string
+	}{
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelectors "app=service1"
+}`,
+			shouldErr:         false,
+			expectedSelectors: []string{"app=service1"},
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelectors "app in (service1,service2)"
+}`,
+			shouldErr:         false,
+			expectedSelectors: []string{"app in (service1,service2)"},
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelectors "app=service1,tier!=cache"
+}`,
+			shouldErr:         false,
+			expectedSelectors: []string{"app=service1,tier!=cache"},
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelectors
+}`,
+			shouldErr:   true,
+			expectedErr: "requires at least one argument",
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelectors "!!!invalid"
+}`,
+			shouldErr:   true,
+			expectedErr: "invalid serviceLabelSelectors",
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelectors ""
+}`,
+			shouldErr:   true,
+			expectedErr: "does not accept empty strings",
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelectors "" "app=service1"
+}`,
+			shouldErr:   true,
+			expectedErr: "does not accept empty strings",
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelectors "app=service1" "app=service2"
+}`,
+			shouldErr:         false,
+			expectedSelectors: []string{"app=service1", "app=service2"},
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelectors "app = service1"
+}`,
+			shouldErr:         false,
+			expectedSelectors: []string{"app=service1"},
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelectors "app=service1,tier=frontend" "app=service2,tier=backend"
+}`,
+			shouldErr:         false,
+			expectedSelectors: []string{"app=service1,tier=frontend", "app=service2,tier=backend"},
+		},
+	}
+
+	for i, test := range tests {
+		c := caddy.NewTestController("dns", test.input)
+		gw, err := parse(c)
+
+		if test.shouldErr {
+			if err == nil {
+				t.Errorf("Test %d: Expected error for input %s", i, test.input)
+			} else if test.expectedErr != "" && !strings.Contains(err.Error(), test.expectedErr) {
+				t.Errorf("Test %d: Expected error containing %q, got: %v", i, test.expectedErr, err)
+			}
+			continue
+		}
+
+		if err != nil {
+			t.Errorf("Test %d: Unexpected error for input %s: %v", i, test.input, err)
+			continue
+		}
+
+		if len(gw.resourceFilters.serviceLabelSelectors) != len(test.expectedSelectors) {
+			t.Errorf("Test %d: Expected %d selectors, got %d: %v", i, len(test.expectedSelectors), len(gw.resourceFilters.serviceLabelSelectors), gw.resourceFilters.serviceLabelSelectors)
+			continue
+		}
+		for j, expected := range test.expectedSelectors {
+			if gw.resourceFilters.serviceLabelSelectors[j] != expected {
+				t.Errorf("Test %d: Selector %d: expected %q, got %q", i, j, expected, gw.resourceFilters.serviceLabelSelectors[j])
 			}
 		}
 	}

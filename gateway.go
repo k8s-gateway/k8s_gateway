@@ -78,8 +78,9 @@ type Gateway struct {
 }
 
 type ResourceFilters struct {
-	ingressClasses []string
-	gatewayClasses []string
+	ingressClasses        []string
+	gatewayClasses        []string
+	serviceLabelSelectors []string
 }
 
 // Create a new Gateway instance
@@ -418,7 +419,7 @@ func (gw *Gateway) SelfAddress(state request.Request) (records []dns.RR) {
 			addrs1 = append(addrs1, results...)
 		}
 		results, raws = resource.lookup([]string{gw.secondNS})
-        _ = raws
+		_ = raws
 		if len(results) > 0 {
 			addrs2 = append(addrs2, results...)
 		}

@@ -1,11 +1,7 @@
 package gateway
 
 import (
-	"bytes"
 	"context"
-	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"testing"
 
@@ -14,97 +10,11 @@ import (
 	core "k8s.io/api/core/v1"
 	networking "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/rest"
-	fakeRest "k8s.io/client-go/rest/fake"
 	"k8s.io/client-go/tools/cache"
-	externaldnsv1 "sigs.k8s.io/external-dns/apis/v1alpha1"
-	"sigs.k8s.io/external-dns/endpoint"
 )
 
-// taken from external-dns/source/crd_test.go
-func addKnownTypes(scheme *runtime.Scheme, groupVersion schema.GroupVersion) {
-	scheme.AddKnownTypes(groupVersion,
-		&externaldnsv1.DNSEndpoint{},
-		&externaldnsv1.DNSEndpointList{},
-	)
-	metav1.AddToGroupVersion(scheme, groupVersion)
-}
-
-func defaultHeader() http.Header {
-	header := http.Header{}
-	header.Set("Content-Type", runtime.ContentTypeJSON)
-	return header
-}
-
-func objBody(codec runtime.Encoder, obj runtime.Object) io.ReadCloser {
-	return io.NopCloser(bytes.NewReader([]byte(runtime.EncodeOrDie(codec, obj))))
-}
-
-func fakeRESTClient(endpoints []*endpoint.Endpoint, apiVersion string, kind string, namespace string, name string, annotations map[string]string, labels map[string]string, _ *testing.T) rest.Interface {
-	groupVersion, _ := schema.ParseGroupVersion(apiVersion)
-	scheme := runtime.NewScheme()
-	addKnownTypes(scheme, groupVersion)
-
-	// Create your DNSEndpoint object.
-	dnsEndpoint := &externaldnsv1.DNSEndpoint{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: apiVersion,
-			Kind:       kind,
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        name,
-			Namespace:   namespace,
-			Annotations: annotations,
-			Labels:      labels,
-			Generation:  1,
-		},
-		Spec: externaldnsv1.DNSEndpointSpec{
-			Endpoints: endpoints,
-		},
-	}
-	var dnsEndpointList externaldnsv1.DNSEndpointList
-
-	codecFactory := serializer.WithoutConversionCodecFactory{
-		CodecFactory: serializer.NewCodecFactory(scheme),
-	}
-
-	client := &fakeRest.RESTClient{
-		GroupVersion:         groupVersion,
-		VersionedAPIPath:     "/apis/" + apiVersion,
-		NegotiatedSerializer: codecFactory,
-		Client: fakeRest.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
-			codec := codecFactory.LegacyCodec(groupVersion)
-			switch p, m := req.URL.Path, req.Method; {
-
-			case p == "/apis/"+apiVersion+"/"+strings.ToLower(kind)+"s" && m == http.MethodGet,
-				p == "/apis/"+apiVersion+"/namespaces/"+namespace+"/"+strings.ToLower(kind)+"s" && m == http.MethodGet,
-				strings.HasPrefix(p, "/apis/"+apiVersion+"/namespaces/") && strings.HasSuffix(p, strings.ToLower(kind)+"s") && m == http.MethodGet:
-				dnsEndpointList.Items = []externaldnsv1.DNSEndpoint{*dnsEndpoint}
-				return &http.Response{StatusCode: http.StatusOK, Header: defaultHeader(), Body: objBody(codec, &dnsEndpointList)}, nil
-
-			case p == "/apis/"+apiVersion+"/namespaces/"+namespace+"/"+strings.ToLower(kind)+"s" && m == http.MethodPost:
-				return &http.Response{
-					StatusCode: http.StatusCreated,
-					Header:     defaultHeader(),
-					Body:       objBody(codec, dnsEndpoint),
-				}, nil
-
-			case p == "/apis/"+apiVersion+"/namespaces/"+namespace+"/"+strings.ToLower(kind)+"s/"+name+"/status" && m == http.MethodPut:
-				return &http.Response{StatusCode: http.StatusOK, Header: defaultHeader(), Body: objBody(codec, dnsEndpoint)}, nil
-
-			default:
-				return nil, fmt.Errorf("unexpected request: %#v\n%#v", req.URL, req)
-			}
-		}),
-	}
-
-	return client
-}
 
 func TestController(t *testing.T) {
 	client := fake.NewClientset()
@@ -114,7 +24,6 @@ func TestController(t *testing.T) {
 	}
 	addServices(client)
 	addIngresses(client)
-	addDNSEndpoints(fakeRESTClient(testDNSEndpoints["dual.example.com"].Spec.Endpoints, "externaldns.k8s.io/v1alpha1", "DNSEndpoint", "ns1", "ep1", nil, nil, t))
 
 	gw := newGateway()
 	gw.Zones = []string{"example.com."}
@@ -171,19 +80,6 @@ func TestController(t *testing.T) {
 			t.Errorf("Unexpected non-empty service hostnames %v for invalid annotation: %v", found, testObj.Annotations)
 		}
 	}
-
-	for index, testObj := range testDNSEndpoints {
-		found, _ := dnsEndpointTargetIndexFunc(testObj)
-		if checkIgnoreLabel(testObj.Labels) {
-			if len(found) != 0 {
-				t.Errorf("Ignored DNSEndpoint key %s should not be found in index, but found: %v", index, found)
-			}
-			continue
-		}
-		if !isFound(index, found) {
-			t.Errorf("DNSEndpoint key %s not found in index: %v", index, found)
-		}
-	}
 }
 
 func isFound(s string, ss []string) bool {
@@ -211,16 +107,6 @@ func addIngresses(client kubernetes.Interface) {
 		_, err := client.NetworkingV1().Ingresses("ns1").Create(ctx, ingress, metav1.CreateOptions{})
 		if err != nil {
 			log.Warningf("Failed to Create Ingress Objects :%s", err)
-		}
-	}
-}
-
-func addDNSEndpoints(client rest.Interface) {
-	ctx := context.TODO()
-	for _, ep := range testDNSEndpoints {
-		_, err := client.Post().Resource("dnsendpoints").Namespace("ns1").Body(ep).Do(ctx).Get()
-		if err != nil {
-			log.Warningf("Failed to Create a DNSEndpoint Object :%s", err)
 		}
 	}
 }
@@ -515,46 +401,6 @@ var testInvalidAnnotationServices = []*core.Service{
 	},
 }
 
-var testDNSEndpoints = map[string]*externaldnsv1.DNSEndpoint{
-	"dual.example.com": {
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ep1",
-			Namespace: "ns1",
-		},
-		Spec: externaldnsv1.DNSEndpointSpec{
-			Endpoints: []*endpoint.Endpoint{
-				{
-					DNSName:    "dual.example.com",
-					RecordType: "A",
-					Targets:    []string{"192.0.2.200"},
-				},
-				{
-					DNSName:    "dual.example.com",
-					RecordType: "AAAA",
-					Targets:    []string{"2001:db8::1"},
-				},
-			},
-		},
-	},
-	"ignored.example.com": {
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ignored-ep",
-			Namespace: "ns1",
-			Labels: map[string]string{
-				ignoreLabelKey: "true",
-			},
-		},
-		Spec: externaldnsv1.DNSEndpointSpec{
-			Endpoints: []*endpoint.Endpoint{
-				{
-					DNSName:    "ignored.example.com",
-					RecordType: "A",
-					Targets:    []string{"192.0.2.99"},
-				},
-			},
-		},
-	},
-}
 
 // testNodes maps a description to a Node fixture.
 var testNodes = map[string]*core.Node{
@@ -592,7 +438,7 @@ var testNodes = map[string]*core.Node{
 	// ignored node — must not be indexed regardless of addresses
 	"ignored-node": {
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "ignored-node",
+			Name:   "ignored-node",
 			Labels: map[string]string{ignoreLabelKey: "true"},
 		},
 		Status: core.NodeStatus{
@@ -688,3 +534,245 @@ type fakeSharedIndexInformer struct {
 }
 
 func (f *fakeSharedIndexInformer) GetIndexer() cache.Indexer { return f.indexer }
+
+func TestServiceLabelSelector(t *testing.T) {
+	ctx := context.TODO()
+
+	service1 := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service1",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "service1", "tier": "frontend"},
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "service1.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.1"}},
+			},
+		},
+	}
+
+	service2 := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service2",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "service2", "tier": "backend"},
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "service2.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.2"}},
+			},
+		},
+	}
+
+	service3 := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service3",
+			Namespace: "default",
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "service3.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.3"}},
+			},
+		},
+	}
+
+	tests := []struct {
+		name          string
+		selector      string
+		expectedCount int
+		expectedNames []string
+	}{
+		{
+			name:          "empty selector returns all services",
+			selector:      "",
+			expectedCount: 3,
+			expectedNames: []string{"service1", "service2", "service3"},
+		},
+		{
+			name:          "equality selector matches one service",
+			selector:      "app=service1",
+			expectedCount: 1,
+			expectedNames: []string{"service1"},
+		},
+		{
+			name:          "set-based selector matches multiple services",
+			selector:      "app in (service1,service2)",
+			expectedCount: 2,
+			expectedNames: []string{"service1", "service2"},
+		},
+		{
+			name:          "selector with no matches returns empty",
+			selector:      "app=service4",
+			expectedCount: 0,
+			expectedNames: []string{},
+		},
+		{
+			name:          "compound selector narrows results",
+			selector:      "app=service1,tier=frontend",
+			expectedCount: 1,
+			expectedNames: []string{"service1"},
+		},
+		{
+			name:          "inequality selector excludes matching value",
+			selector:      "app!=service2",
+			expectedCount: 2,
+			expectedNames: []string{"service1", "service3"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := fake.NewClientset(service1, service2, service3)
+
+			lister := serviceLister(ctx, client, core.NamespaceAll, tc.selector)
+			result, err := lister(metav1.ListOptions{})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			serviceList, ok := result.(*core.ServiceList)
+			if !ok {
+				t.Fatalf("expected *core.ServiceList, got %T", result)
+			}
+
+			if len(serviceList.Items) != tc.expectedCount {
+				names := make([]string, len(serviceList.Items))
+				for i, svc := range serviceList.Items {
+					names[i] = svc.Name
+				}
+				t.Errorf("expected %d services, got %d: %v", tc.expectedCount, len(serviceList.Items), names)
+			}
+
+			for _, expectedName := range tc.expectedNames {
+				found := false
+				for _, svc := range serviceList.Items {
+					if svc.Name == expectedName {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected service %q not found in results", expectedName)
+				}
+			}
+		})
+	}
+}
+
+func TestMultiSelectorServiceLookup(t *testing.T) {
+	service1 := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service1",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "service1"},
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "service1.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.1"}},
+			},
+		},
+	}
+
+	service2 := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service2",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "service2"},
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "service2.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.2"}},
+			},
+		},
+	}
+
+	service3 := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service3",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "service3"},
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "service3.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.3"}},
+			},
+		},
+	}
+
+	// Two indexers with disjoint selectors: app=service1 and app=service2.
+	// service3 matches neither.
+
+	indexer1 := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		serviceHostnameIndex: serviceHostnameIndexFunc,
+	})
+	if err := indexer1.Add(service1); err != nil {
+		t.Fatalf("failed to add service to indexer1: %v", err)
+	}
+
+	indexer2 := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		serviceHostnameIndex: serviceHostnameIndexFunc,
+	})
+	if err := indexer2.Add(service2); err != nil {
+		t.Fatalf("failed to add service to indexer2: %v", err)
+	}
+
+	_ = service3 // not added to any indexer
+
+	controllers := []cache.SharedIndexInformer{
+		&fakeSharedIndexInformer{indexer: indexer1},
+		&fakeSharedIndexInformer{indexer: indexer2},
+	}
+
+	lookup := lookupServiceIndex(controllers)
+
+	t.Run("union of disjoint selectors returns both services", func(t *testing.T) {
+		results1, _ := lookup([]string{"service1.example.com"})
+		if len(results1) != 1 || results1[0].String() != "10.0.0.1" {
+			t.Errorf("expected [10.0.0.1], got %v", results1)
+		}
+
+		results2, _ := lookup([]string{"service2.example.com"})
+		if len(results2) != 1 || results2[0].String() != "10.0.0.2" {
+			t.Errorf("expected [10.0.0.2], got %v", results2)
+		}
+
+		results3, _ := lookup([]string{"service3.example.com"})
+		if len(results3) != 0 {
+			t.Errorf("expected no results for service3, got %v", results3)
+		}
+	})
+
+	t.Run("deduplication across overlapping informers", func(t *testing.T) {
+		if err := indexer2.Add(service1); err != nil {
+			t.Fatalf("failed to add duplicate: %v", err)
+		}
+		results, _ := lookup([]string{"service1.example.com"})
+		if len(results) != 1 {
+			t.Errorf("expected 1 result after dedup, got %d: %v", len(results), results)
+		}
+	})
+}
