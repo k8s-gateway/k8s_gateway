@@ -48,24 +48,24 @@ func TestServiceLabelSelectorParsing(t *testing.T) {
 	}{
 		{
 			input: `k8s_gateway example.org {
-	serviceLabelSelectors "env=prod"
+	serviceLabelSelectors "app=service1"
 }`,
 			shouldErr:         false,
-			expectedSelectors: []string{"env=prod"},
+			expectedSelectors: []string{"app=service1"},
 		},
 		{
 			input: `k8s_gateway example.org {
-	serviceLabelSelectors "tier in (frontend,backend)"
+	serviceLabelSelectors "app in (service1,service2)"
 }`,
 			shouldErr:         false,
-			expectedSelectors: []string{"tier in (backend,frontend)"},
+			expectedSelectors: []string{"app in (service1,service2)"},
 		},
 		{
 			input: `k8s_gateway example.org {
-	serviceLabelSelectors "env=prod,tier!=cache"
+	serviceLabelSelectors "app=service1,tier!=cache"
 }`,
 			shouldErr:         false,
-			expectedSelectors: []string{"env=prod,tier!=cache"},
+			expectedSelectors: []string{"app=service1,tier!=cache"},
 		},
 		{
 			input: `k8s_gateway example.org {
@@ -81,17 +81,17 @@ func TestServiceLabelSelectorParsing(t *testing.T) {
 		},
 		{
 			input: `k8s_gateway example.org {
-	serviceLabelSelectors "a=b" "c=d"
+	serviceLabelSelectors "app=service1" "app=service2"
 }`,
 			shouldErr:         false,
-			expectedSelectors: []string{"a=b", "c=d"},
+			expectedSelectors: []string{"app=service1", "app=service2"},
 		},
 		{
 			input: `k8s_gateway example.org {
-	serviceLabelSelectors "env = prod"
+	serviceLabelSelectors "app = service1"
 }`,
 			shouldErr:         false,
-			expectedSelectors: []string{"env=prod"},
+			expectedSelectors: []string{"app=service1"},
 		},
 		{
 			input: `k8s_gateway example.org {
