@@ -692,13 +692,13 @@ func (f *fakeSharedIndexInformer) GetIndexer() cache.Indexer { return f.indexer 
 func TestServiceLabelSelector(t *testing.T) {
 	ctx := context.TODO()
 
-	prodService := &core.Service{
+	service1 := &core.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc-prod",
+			Name:      "service1",
 			Namespace: "default",
-			Labels:    map[string]string{"env": "prod", "tier": "frontend"},
+			Labels:    map[string]string{"app": "service1", "tier": "frontend"},
 			Annotations: map[string]string{
-				hostnameAnnotationKey: "prod.example.com",
+				hostnameAnnotationKey: "service1.example.com",
 			},
 		},
 		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
@@ -709,13 +709,13 @@ func TestServiceLabelSelector(t *testing.T) {
 		},
 	}
 
-	stagingService := &core.Service{
+	service2 := &core.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc-staging",
+			Name:      "service2",
 			Namespace: "default",
-			Labels:    map[string]string{"env": "staging", "tier": "backend"},
+			Labels:    map[string]string{"app": "service2", "tier": "backend"},
 			Annotations: map[string]string{
-				hostnameAnnotationKey: "staging.example.com",
+				hostnameAnnotationKey: "service2.example.com",
 			},
 		},
 		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
@@ -726,12 +726,12 @@ func TestServiceLabelSelector(t *testing.T) {
 		},
 	}
 
-	unlabeledService := &core.Service{
+	service3 := &core.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc-unlabeled",
+			Name:      "service3",
 			Namespace: "default",
 			Annotations: map[string]string{
-				hostnameAnnotationKey: "unlabeled.example.com",
+				hostnameAnnotationKey: "service3.example.com",
 			},
 		},
 		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
@@ -752,43 +752,43 @@ func TestServiceLabelSelector(t *testing.T) {
 			name:          "empty selector returns all services",
 			selector:      "",
 			expectedCount: 3,
-			expectedNames: []string{"svc-prod", "svc-staging", "svc-unlabeled"},
+			expectedNames: []string{"service1", "service2", "service3"},
 		},
 		{
 			name:          "equality selector matches one service",
-			selector:      "env=prod",
+			selector:      "app=service1",
 			expectedCount: 1,
-			expectedNames: []string{"svc-prod"},
+			expectedNames: []string{"service1"},
 		},
 		{
 			name:          "set-based selector matches multiple services",
-			selector:      "env in (prod,staging)",
+			selector:      "app in (service1,service2)",
 			expectedCount: 2,
-			expectedNames: []string{"svc-prod", "svc-staging"},
+			expectedNames: []string{"service1", "service2"},
 		},
 		{
 			name:          "selector with no matches returns empty",
-			selector:      "env=dev",
+			selector:      "app=service4",
 			expectedCount: 0,
 			expectedNames: []string{},
 		},
 		{
 			name:          "compound selector narrows results",
-			selector:      "env=prod,tier=frontend",
+			selector:      "app=service1,tier=frontend",
 			expectedCount: 1,
-			expectedNames: []string{"svc-prod"},
+			expectedNames: []string{"service1"},
 		},
 		{
 			name:          "inequality selector excludes matching value",
-			selector:      "env!=staging",
+			selector:      "app!=service2",
 			expectedCount: 2,
-			expectedNames: []string{"svc-prod", "svc-unlabeled"},
+			expectedNames: []string{"service1", "service3"},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			client := fake.NewClientset(prodService, stagingService, unlabeledService)
+			client := fake.NewClientset(service1, service2, service3)
 
 			lister := serviceLister(ctx, client, core.NamespaceAll, tc.selector)
 			result, err := lister(metav1.ListOptions{})
@@ -826,13 +826,13 @@ func TestServiceLabelSelector(t *testing.T) {
 }
 
 func TestMultiSelectorServiceLookup(t *testing.T) {
-	service1Frontend := &core.Service{
+	service1 := &core.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "service1-fe",
+			Name:      "service1",
 			Namespace: "default",
-			Labels:    map[string]string{"app": "service1", "tier": "frontend"},
+			Labels:    map[string]string{"app": "service1"},
 			Annotations: map[string]string{
-				hostnameAnnotationKey: "service1-fe.example.com",
+				hostnameAnnotationKey: "service1.example.com",
 			},
 		},
 		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
@@ -843,13 +843,13 @@ func TestMultiSelectorServiceLookup(t *testing.T) {
 		},
 	}
 
-	service2Backend := &core.Service{
+	service2 := &core.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "service2-be",
+			Name:      "service2",
 			Namespace: "default",
-			Labels:    map[string]string{"app": "service2", "tier": "backend"},
+			Labels:    map[string]string{"app": "service2"},
 			Annotations: map[string]string{
-				hostnameAnnotationKey: "service2-be.example.com",
+				hostnameAnnotationKey: "service2.example.com",
 			},
 		},
 		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
@@ -860,13 +860,13 @@ func TestMultiSelectorServiceLookup(t *testing.T) {
 		},
 	}
 
-	service3Frontend := &core.Service{
+	service3 := &core.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "service3-fe",
+			Name:      "service3",
 			Namespace: "default",
-			Labels:    map[string]string{"app": "service3", "tier": "frontend"},
+			Labels:    map[string]string{"app": "service3"},
 			Annotations: map[string]string{
-				hostnameAnnotationKey: "service3-fe.example.com",
+				hostnameAnnotationKey: "service3.example.com",
 			},
 		},
 		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
@@ -877,27 +877,24 @@ func TestMultiSelectorServiceLookup(t *testing.T) {
 		},
 	}
 
-	// Build two indexers with disjoint selectors, simulating what kubernetes.go
-	// does when multiple serviceLabelSelectors are configured.
-	// Selector 1: app=service1,tier=frontend -> matches service1Frontend
-	// Selector 2: app=service2,tier=backend  -> matches service2Backend
-	// service3Frontend matches neither.
+	// Two indexers with disjoint selectors: app=service1 and app=service2.
+	// service3 matches neither.
 
 	indexer1 := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
 		serviceHostnameIndex: serviceHostnameIndexFunc,
 	})
-	if err := indexer1.Add(service1Frontend); err != nil {
+	if err := indexer1.Add(service1); err != nil {
 		t.Fatalf("failed to add service to indexer1: %v", err)
 	}
 
 	indexer2 := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
 		serviceHostnameIndex: serviceHostnameIndexFunc,
 	})
-	if err := indexer2.Add(service2Backend); err != nil {
+	if err := indexer2.Add(service2); err != nil {
 		t.Fatalf("failed to add service to indexer2: %v", err)
 	}
 
-	_ = service3Frontend // not added to any indexer
+	_ = service3 // not added to any indexer
 
 	controllers := []cache.SharedIndexInformer{
 		&fakeSharedIndexInformer{indexer: indexer1},
@@ -907,27 +904,27 @@ func TestMultiSelectorServiceLookup(t *testing.T) {
 	lookup := lookupServiceIndex(controllers)
 
 	t.Run("union of disjoint selectors returns both services", func(t *testing.T) {
-		results1, _ := lookup([]string{"service1-fe.example.com"})
+		results1, _ := lookup([]string{"service1.example.com"})
 		if len(results1) != 1 || results1[0].String() != "10.0.0.1" {
 			t.Errorf("expected [10.0.0.1], got %v", results1)
 		}
 
-		results2, _ := lookup([]string{"service2-be.example.com"})
+		results2, _ := lookup([]string{"service2.example.com"})
 		if len(results2) != 1 || results2[0].String() != "10.0.0.2" {
 			t.Errorf("expected [10.0.0.2], got %v", results2)
 		}
 
-		results3, _ := lookup([]string{"service3-fe.example.com"})
+		results3, _ := lookup([]string{"service3.example.com"})
 		if len(results3) != 0 {
-			t.Errorf("expected no results for service3-fe, got %v", results3)
+			t.Errorf("expected no results for service3, got %v", results3)
 		}
 	})
 
 	t.Run("deduplication across overlapping informers", func(t *testing.T) {
-		if err := indexer2.Add(service1Frontend); err != nil {
+		if err := indexer2.Add(service1); err != nil {
 			t.Fatalf("failed to add duplicate: %v", err)
 		}
-		results, _ := lookup([]string{"service1-fe.example.com"})
+		results, _ := lookup([]string{"service1.example.com"})
 		if len(results) != 1 {
 			t.Errorf("expected 1 result after dedup, got %d: %v", len(results), results)
 		}
