@@ -95,10 +95,10 @@ func TestServiceLabelSelectorParsing(t *testing.T) {
 		},
 		{
 			input: `k8s_gateway example.org {
-	serviceLabelSelectors "zone=kitchen,tier=frontend" "zone=bedroom,tier=backend"
+	serviceLabelSelectors "app=service1,tier=frontend" "app=service2,tier=backend"
 }`,
 			shouldErr:         false,
-			expectedSelectors: []string{"tier=frontend,zone=kitchen", "tier=backend,zone=bedroom"},
+			expectedSelectors: []string{"app=service1,tier=frontend", "app=service2,tier=backend"},
 		},
 	}
 

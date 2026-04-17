@@ -826,13 +826,13 @@ func TestServiceLabelSelector(t *testing.T) {
 }
 
 func TestMultiSelectorServiceLookup(t *testing.T) {
-	kitchenFrontend := &core.Service{
+	service1Frontend := &core.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc-kitchen-fe",
+			Name:      "service1-fe",
 			Namespace: "default",
-			Labels:    map[string]string{"zone": "kitchen", "tier": "frontend"},
+			Labels:    map[string]string{"app": "service1", "tier": "frontend"},
 			Annotations: map[string]string{
-				hostnameAnnotationKey: "kitchen-fe.example.com",
+				hostnameAnnotationKey: "service1-fe.example.com",
 			},
 		},
 		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
@@ -843,13 +843,13 @@ func TestMultiSelectorServiceLookup(t *testing.T) {
 		},
 	}
 
-	bedroomBackend := &core.Service{
+	service2Backend := &core.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc-bedroom-be",
+			Name:      "service2-be",
 			Namespace: "default",
-			Labels:    map[string]string{"zone": "bedroom", "tier": "backend"},
+			Labels:    map[string]string{"app": "service2", "tier": "backend"},
 			Annotations: map[string]string{
-				hostnameAnnotationKey: "bedroom-be.example.com",
+				hostnameAnnotationKey: "service2-be.example.com",
 			},
 		},
 		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
@@ -860,13 +860,13 @@ func TestMultiSelectorServiceLookup(t *testing.T) {
 		},
 	}
 
-	garageService := &core.Service{
+	service3Frontend := &core.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc-garage",
+			Name:      "service3-fe",
 			Namespace: "default",
-			Labels:    map[string]string{"zone": "garage", "tier": "frontend"},
+			Labels:    map[string]string{"app": "service3", "tier": "frontend"},
 			Annotations: map[string]string{
-				hostnameAnnotationKey: "garage.example.com",
+				hostnameAnnotationKey: "service3-fe.example.com",
 			},
 		},
 		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
@@ -879,25 +879,25 @@ func TestMultiSelectorServiceLookup(t *testing.T) {
 
 	// Build two indexers with disjoint selectors, simulating what kubernetes.go
 	// does when multiple serviceLabelSelectors are configured.
-	// Selector 1: zone=kitchen,tier=frontend -> matches kitchenFrontend
-	// Selector 2: zone=bedroom,tier=backend  -> matches bedroomBackend
-	// garageService matches neither.
+	// Selector 1: app=service1,tier=frontend -> matches service1Frontend
+	// Selector 2: app=service2,tier=backend  -> matches service2Backend
+	// service3Frontend matches neither.
 
 	indexer1 := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
 		serviceHostnameIndex: serviceHostnameIndexFunc,
 	})
-	if err := indexer1.Add(kitchenFrontend); err != nil {
+	if err := indexer1.Add(service1Frontend); err != nil {
 		t.Fatalf("failed to add service to indexer1: %v", err)
 	}
 
 	indexer2 := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
 		serviceHostnameIndex: serviceHostnameIndexFunc,
 	})
-	if err := indexer2.Add(bedroomBackend); err != nil {
+	if err := indexer2.Add(service2Backend); err != nil {
 		t.Fatalf("failed to add service to indexer2: %v", err)
 	}
 
-	_ = garageService // not added to any indexer
+	_ = service3Frontend // not added to any indexer
 
 	controllers := []cache.SharedIndexInformer{
 		&fakeSharedIndexInformer{indexer: indexer1},
@@ -907,31 +907,27 @@ func TestMultiSelectorServiceLookup(t *testing.T) {
 	lookup := lookupServiceIndex(controllers)
 
 	t.Run("union of disjoint selectors returns both services", func(t *testing.T) {
-		// Query for kitchen-fe hostname
-		results1, _ := lookup([]string{"kitchen-fe.example.com"})
+		results1, _ := lookup([]string{"service1-fe.example.com"})
 		if len(results1) != 1 || results1[0].String() != "10.0.0.1" {
 			t.Errorf("expected [10.0.0.1], got %v", results1)
 		}
 
-		// Query for bedroom-be hostname
-		results2, _ := lookup([]string{"bedroom-be.example.com"})
+		results2, _ := lookup([]string{"service2-be.example.com"})
 		if len(results2) != 1 || results2[0].String() != "10.0.0.2" {
 			t.Errorf("expected [10.0.0.2], got %v", results2)
 		}
 
-		// Query for garage hostname (not in any indexer)
-		results3, _ := lookup([]string{"garage.example.com"})
+		results3, _ := lookup([]string{"service3-fe.example.com"})
 		if len(results3) != 0 {
-			t.Errorf("expected no results for garage, got %v", results3)
+			t.Errorf("expected no results for service3-fe, got %v", results3)
 		}
 	})
 
 	t.Run("deduplication across overlapping informers", func(t *testing.T) {
-		// Add the same service to both indexers to verify dedup
-		if err := indexer2.Add(kitchenFrontend); err != nil {
+		if err := indexer2.Add(service1Frontend); err != nil {
 			t.Fatalf("failed to add duplicate: %v", err)
 		}
-		results, _ := lookup([]string{"kitchen-fe.example.com"})
+		results, _ := lookup([]string{"service1-fe.example.com"})
 		if len(results) != 1 {
 			t.Errorf("expected 1 result after dedup, got %d: %v", len(results), results)
 		}

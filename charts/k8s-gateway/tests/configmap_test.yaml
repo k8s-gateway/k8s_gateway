@@ -252,15 +252,15 @@ tests:
       ttl: 300
       filters:
         serviceLabelSelectors:
-          - "zone=kitchen,tier=frontend"
-          - "zone=bedroom,tier=backend"
+          - "app=service1,tier=frontend"
+          - "app=service2,tier=backend"
     template: templates/configmap.yaml
     asserts:
       - hasDocuments:
           count: 1
       - matchRegex:
           path: data.Corefile
-          pattern: 'serviceLabelSelectors "zone=kitchen,tier=frontend" "zone=bedroom,tier=backend"'
+          pattern: 'serviceLabelSelectors "app=service1,tier=frontend" "app=service2,tier=backend"'
       - equal:
           path: data.Corefile
           value: |-
@@ -269,7 +269,7 @@ tests:
                   apex RELEASE-NAME-k8s-gateway.NAMESPACE
                   ttl 300
                   resources Service
-                  serviceLabelSelectors "zone=kitchen,tier=frontend" "zone=bedroom,tier=backend"
+                  serviceLabelSelectors "app=service1,tier=frontend" "app=service2,tier=backend"
                 }
                 log
                 errors
