@@ -81,6 +81,18 @@ func TestServiceLabelSelectorParsing(t *testing.T) {
 		},
 		{
 			input: `k8s_gateway example.org {
+	serviceLabelSelectors ""
+}`,
+			shouldErr: true,
+		},
+		{
+			input: `k8s_gateway example.org {
+	serviceLabelSelectors "" "app=service1"
+}`,
+			shouldErr: true,
+		},
+		{
+			input: `k8s_gateway example.org {
 	serviceLabelSelectors "app=service1" "app=service2"
 }`,
 			shouldErr:         false,

@@ -127,6 +127,9 @@ func parse(c *caddy.Controller) (*Gateway, error) {
 					return nil, c.Errf("serviceLabelSelectors requires at least one argument (a label selector string)")
 				}
 				for _, arg := range args {
+					if arg == "" {
+						return nil, c.Errf("serviceLabelSelectors does not accept empty strings")
+					}
 					sel, err := labels.Parse(arg)
 					if err != nil {
 						return nil, c.Errf("invalid serviceLabelSelectors %q: %v", arg, err)
