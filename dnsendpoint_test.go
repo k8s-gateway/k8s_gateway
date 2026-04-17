@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/rest"
 	fakeRest "k8s.io/client-go/rest/fake"
+	"k8s.io/client-go/tools/cache"
 	externaldnsv1 "sigs.k8s.io/external-dns/apis/v1alpha1"
 	"sigs.k8s.io/external-dns/endpoint"
 )
@@ -163,4 +164,113 @@ var testDNSEndpoints = map[string]*externaldnsv1.DNSEndpoint{
 			},
 		},
 	},
+}
+
+func TestDNSEndpointTargetIndexFunc_BadInput(t *testing.T) {
+	found, err := dnsEndpointTargetIndexFunc("not-a-dnsendpoint")
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if len(found) != 0 {
+		t.Errorf("expected empty result for non-DNSEndpoint input, got: %v", found)
+	}
+}
+
+func newDNSEndpointIndexer() cache.Indexer {
+	return cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		externalDNSHostnameIndex: dnsEndpointTargetIndexFunc,
+	})
+}
+
+func TestLookupDNSEndpoint(t *testing.T) {
+	fakeIndexer := newDNSEndpointIndexer()
+	ep := &externaldnsv1.DNSEndpoint{
+		ObjectMeta: metav1.ObjectMeta{Name: "ep1", Namespace: "ns1"},
+		Spec: externaldnsv1.DNSEndpointSpec{
+			Endpoints: []*endpoint.Endpoint{
+				// valid A record
+				{DNSName: "svc.example.com", RecordType: "A", Targets: []string{"192.0.2.1"}},
+				// valid AAAA record
+				{DNSName: "svc.example.com", RecordType: "AAAA", Targets: []string{"2001:db8::1"}},
+				// TXT record — goes into raw, not result
+				{DNSName: "svc.example.com", RecordType: "TXT", Targets: []string{"heritage=external-dns"}},
+			},
+		},
+	}
+	if err := fakeIndexer.Add(ep); err != nil {
+		t.Fatalf("failed to add DNSEndpoint to indexer: %v", err)
+	}
+
+	lookup := lookupDNSEndpoint(&fakeSharedIndexInformer{indexer: fakeIndexer})
+	result, raw := lookup([]string{"svc.example.com"})
+
+	if len(result) != 2 {
+		t.Errorf("expected 2 IP results (1 A + 1 AAAA), got %d: %v", len(result), result)
+	}
+	if len(raw) != 1 || raw[0] != "heritage=external-dns" {
+		t.Errorf("expected 1 TXT result %q, got %v", "heritage=external-dns", raw)
+	}
+}
+
+func TestLookupDNSEndpoint_InvalidIP(t *testing.T) {
+	fakeIndexer := newDNSEndpointIndexer()
+	ep := &externaldnsv1.DNSEndpoint{
+		ObjectMeta: metav1.ObjectMeta{Name: "ep2", Namespace: "ns1"},
+		Spec: externaldnsv1.DNSEndpointSpec{
+			Endpoints: []*endpoint.Endpoint{
+				{DNSName: "bad.example.com", RecordType: "A", Targets: []string{"not-an-ip", "192.0.2.5"}},
+			},
+		},
+	}
+	if err := fakeIndexer.Add(ep); err != nil {
+		t.Fatalf("failed to add DNSEndpoint to indexer: %v", err)
+	}
+
+	lookup := lookupDNSEndpoint(&fakeSharedIndexInformer{indexer: fakeIndexer})
+	result, _ := lookup([]string{"bad.example.com"})
+
+	if len(result) != 1 {
+		t.Errorf("expected 1 valid IP (invalid one skipped), got %d: %v", len(result), result)
+	}
+	if result[0].String() != "192.0.2.5" {
+		t.Errorf("expected 192.0.2.5, got %s", result[0])
+	}
+}
+
+func TestLookupDNSEndpoint_NoMatch(t *testing.T) {
+	fakeIndexer := newDNSEndpointIndexer()
+	lookup := lookupDNSEndpoint(&fakeSharedIndexInformer{indexer: fakeIndexer})
+	result, raw := lookup([]string{"unknown.example.com"})
+
+	if len(result) != 0 {
+		t.Errorf("expected no IP results, got: %v", result)
+	}
+	if len(raw) != 0 {
+		t.Errorf("expected no raw results, got: %v", raw)
+	}
+}
+
+func TestDNSEndpointLister(t *testing.T) {
+	ep := testDNSEndpoints["dual.example.com"]
+	client := fakeRESTClient(ep.Spec.Endpoints, "externaldns.k8s.io/v1alpha1", "DNSEndpoint", "ns1", "ep1", nil, nil, t)
+
+	old := externaldnsCRDClient
+	externaldnsCRDClient = client
+	defer func() { externaldnsCRDClient = old }()
+
+	lister := dnsEndpointLister(context.TODO(), "ns1")
+	obj, err := lister(metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("dnsEndpointLister returned error: %v", err)
+	}
+	list, ok := obj.(*externaldnsv1.DNSEndpointList)
+	if !ok {
+		t.Fatalf("expected *externaldnsv1.DNSEndpointList, got %T", obj)
+	}
+	if len(list.Items) != 1 {
+		t.Errorf("expected 1 item, got %d", len(list.Items))
+	}
+	if list.Items[0].Name != "ep1" {
+		t.Errorf("expected item name %q, got %q", "ep1", list.Items[0].Name)
+	}
 }
