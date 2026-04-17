@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/coredns/caddy"
@@ -44,6 +45,7 @@ func TestServiceLabelSelectorParsing(t *testing.T) {
 	tests := []struct {
 		input             string
 		shouldErr         bool
+		expectedErr       string
 		expectedSelectors []string
 	}{
 		{
@@ -71,25 +73,29 @@ func TestServiceLabelSelectorParsing(t *testing.T) {
 			input: `k8s_gateway example.org {
 	serviceLabelSelectors
 }`,
-			shouldErr: true,
+			shouldErr:   true,
+			expectedErr: "requires at least one argument",
 		},
 		{
 			input: `k8s_gateway example.org {
 	serviceLabelSelectors "!!!invalid"
 }`,
-			shouldErr: true,
+			shouldErr:   true,
+			expectedErr: "invalid serviceLabelSelectors",
 		},
 		{
 			input: `k8s_gateway example.org {
 	serviceLabelSelectors ""
 }`,
-			shouldErr: true,
+			shouldErr:   true,
+			expectedErr: "does not accept empty strings",
 		},
 		{
 			input: `k8s_gateway example.org {
 	serviceLabelSelectors "" "app=service1"
 }`,
-			shouldErr: true,
+			shouldErr:   true,
+			expectedErr: "does not accept empty strings",
 		},
 		{
 			input: `k8s_gateway example.org {
@@ -121,6 +127,8 @@ func TestServiceLabelSelectorParsing(t *testing.T) {
 		if test.shouldErr {
 			if err == nil {
 				t.Errorf("Test %d: Expected error for input %s", i, test.input)
+			} else if test.expectedErr != "" && !strings.Contains(err.Error(), test.expectedErr) {
+				t.Errorf("Test %d: Expected error containing %q, got: %v", i, test.expectedErr, err)
 			}
 			continue
 		}
