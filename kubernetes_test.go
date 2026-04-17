@@ -532,3 +532,245 @@ type fakeSharedIndexInformer struct {
 }
 
 func (f *fakeSharedIndexInformer) GetIndexer() cache.Indexer { return f.indexer }
+
+func TestServiceLabelSelector(t *testing.T) {
+	ctx := context.TODO()
+
+	service1 := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service1",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "service1", "tier": "frontend"},
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "service1.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.1"}},
+			},
+		},
+	}
+
+	service2 := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service2",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "service2", "tier": "backend"},
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "service2.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.2"}},
+			},
+		},
+	}
+
+	service3 := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service3",
+			Namespace: "default",
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "service3.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.3"}},
+			},
+		},
+	}
+
+	tests := []struct {
+		name          string
+		selector      string
+		expectedCount int
+		expectedNames []string
+	}{
+		{
+			name:          "empty selector returns all services",
+			selector:      "",
+			expectedCount: 3,
+			expectedNames: []string{"service1", "service2", "service3"},
+		},
+		{
+			name:          "equality selector matches one service",
+			selector:      "app=service1",
+			expectedCount: 1,
+			expectedNames: []string{"service1"},
+		},
+		{
+			name:          "set-based selector matches multiple services",
+			selector:      "app in (service1,service2)",
+			expectedCount: 2,
+			expectedNames: []string{"service1", "service2"},
+		},
+		{
+			name:          "selector with no matches returns empty",
+			selector:      "app=service4",
+			expectedCount: 0,
+			expectedNames: []string{},
+		},
+		{
+			name:          "compound selector narrows results",
+			selector:      "app=service1,tier=frontend",
+			expectedCount: 1,
+			expectedNames: []string{"service1"},
+		},
+		{
+			name:          "inequality selector excludes matching value",
+			selector:      "app!=service2",
+			expectedCount: 2,
+			expectedNames: []string{"service1", "service3"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := fake.NewClientset(service1, service2, service3)
+
+			lister := serviceLister(ctx, client, core.NamespaceAll, tc.selector)
+			result, err := lister(metav1.ListOptions{})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			serviceList, ok := result.(*core.ServiceList)
+			if !ok {
+				t.Fatalf("expected *core.ServiceList, got %T", result)
+			}
+
+			if len(serviceList.Items) != tc.expectedCount {
+				names := make([]string, len(serviceList.Items))
+				for i, svc := range serviceList.Items {
+					names[i] = svc.Name
+				}
+				t.Errorf("expected %d services, got %d: %v", tc.expectedCount, len(serviceList.Items), names)
+			}
+
+			for _, expectedName := range tc.expectedNames {
+				found := false
+				for _, svc := range serviceList.Items {
+					if svc.Name == expectedName {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected service %q not found in results", expectedName)
+				}
+			}
+		})
+	}
+}
+
+func TestMultiSelectorServiceLookup(t *testing.T) {
+	service1 := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service1",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "service1"},
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "service1.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.1"}},
+			},
+		},
+	}
+
+	service2 := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service2",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "service2"},
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "service2.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.2"}},
+			},
+		},
+	}
+
+	service3 := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service3",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "service3"},
+			Annotations: map[string]string{
+				hostnameAnnotationKey: "service3.example.com",
+			},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{{IP: "10.0.0.3"}},
+			},
+		},
+	}
+
+	// Two indexers with disjoint selectors: app=service1 and app=service2.
+	// service3 matches neither.
+
+	indexer1 := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		serviceHostnameIndex: serviceHostnameIndexFunc,
+	})
+	if err := indexer1.Add(service1); err != nil {
+		t.Fatalf("failed to add service to indexer1: %v", err)
+	}
+
+	indexer2 := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		serviceHostnameIndex: serviceHostnameIndexFunc,
+	})
+	if err := indexer2.Add(service2); err != nil {
+		t.Fatalf("failed to add service to indexer2: %v", err)
+	}
+
+	_ = service3 // not added to any indexer
+
+	controllers := []cache.SharedIndexInformer{
+		&fakeSharedIndexInformer{indexer: indexer1},
+		&fakeSharedIndexInformer{indexer: indexer2},
+	}
+
+	lookup := lookupServiceIndex(controllers)
+
+	t.Run("union of disjoint selectors returns both services", func(t *testing.T) {
+		results1, _ := lookup([]string{"service1.example.com"})
+		if len(results1) != 1 || results1[0].String() != "10.0.0.1" {
+			t.Errorf("expected [10.0.0.1], got %v", results1)
+		}
+
+		results2, _ := lookup([]string{"service2.example.com"})
+		if len(results2) != 1 || results2[0].String() != "10.0.0.2" {
+			t.Errorf("expected [10.0.0.2], got %v", results2)
+		}
+
+		results3, _ := lookup([]string{"service3.example.com"})
+		if len(results3) != 0 {
+			t.Errorf("expected no results for service3, got %v", results3)
+		}
+	})
+
+	t.Run("deduplication across overlapping informers", func(t *testing.T) {
+		if err := indexer2.Add(service1); err != nil {
+			t.Fatalf("failed to add duplicate: %v", err)
+		}
+		results, _ := lookup([]string{"service1.example.com"})
+		if len(results) != 1 {
+			t.Errorf("expected 1 result after dedup, got %d: %v", len(results), results)
+		}
+	})
+}
