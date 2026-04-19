@@ -12,5 +12,5 @@ maintainers:
     name: samip5
 annotations:
   artifacthub.io/changes: |
-    - kind: added
-      description: support multiple serviceLabelSelectors for OR-of-ANDs filtering
+    - kind: changed
+      description: bump app version to 1.8.0
