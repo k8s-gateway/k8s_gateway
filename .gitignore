@@ -7,3 +7,4 @@ tilt_modules
 .idea
 .history
 __snapshot__/
+coverage*
