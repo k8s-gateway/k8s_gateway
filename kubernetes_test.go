@@ -15,7 +15,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
-
 func TestController(t *testing.T) {
 	client := fake.NewClientset()
 	ctrl := &KubeController{
@@ -400,7 +399,6 @@ var testInvalidAnnotationServices = []*core.Service{
 		},
 	},
 }
-
 
 // testNodes maps a description to a Node fixture.
 var testNodes = map[string]*core.Node{

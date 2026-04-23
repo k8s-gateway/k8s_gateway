@@ -155,7 +155,7 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 							},
 							&core.Service{},
 							defaultResyncPeriod,
-						cache.Indexers{serviceHostnameIndex: serviceHostnameIndexFunc},
+							cache.Indexers{serviceHostnameIndex: serviceHostnameIndexFunc},
 						)
 						// Add event handlers to mark gateway as dirty when resources change
 						if _, err := sc.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -163,7 +163,7 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 							UpdateFunc: func(oldObj, newObj interface{}) { originalGateway.markDirty() },
 							DeleteFunc: func(obj interface{}) { originalGateway.markDirty() },
 						}); err != nil {
-							log.Warningf("Failed to add event handler to service controller: %v", err)
+							log.Warningf("Failed to add event handler for Service controller: %v", err)
 						}
 						serviceControllers = append(serviceControllers, sc)
 						ctrl.controllers = append(ctrl.controllers, sc)

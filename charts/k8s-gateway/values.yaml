@@ -1,7 +1,7 @@
 image:
   registry: ghcr.io
   repository: k8s-gateway/k8s_gateway
-  tag: 1.6.4
+  tag: 1.7.0
   pullPolicy: IfNotPresent
 
 # Reference to one or more secrets to be used when pulling images.
@@ -39,6 +39,7 @@ watchedResources: ["Ingress", "Service"]
 filters:
   ingressClasses: []
   gatewayClasses: []
+  serviceLabelSelectors: []
 
 # Service name of a secondary DNS server (should be `serviceName.namespace`)
 secondary: ""

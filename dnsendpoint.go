@@ -64,7 +64,7 @@ func initializeDNSEndpointController(ctx context.Context, ctrl *KubeController, 
 		UpdateFunc: func(oldObj, newObj interface{}) { gw.markDirty() },
 		DeleteFunc: func(obj interface{}) { gw.markDirty() },
 	}); err != nil {
-		log.Errorf("Failed to add event handler to dnsEndpoint controller: %v", err)
+		log.Warningf("Failed to add event handler for DNSEndpoint controller: %v", err)
 	}
 	resource.lookup = lookupDNSEndpoint(dnsEndpointController)
 	ctrl.controllers = append(ctrl.controllers, dnsEndpointController)

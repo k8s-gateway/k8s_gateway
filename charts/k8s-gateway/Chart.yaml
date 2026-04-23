@@ -2,12 +2,15 @@ apiVersion: v2
 name: k8s-gateway
 description: A Helm chart for the k8s_gateway CoreDNS plugin
 type: application
-version: 3.5.0
-appVersion: 1.6.4
+version: 3.7.1
+appVersion: 1.8.0
+home: https://github.com/k8s-gateway/k8s_gateway
+sources:
+  - https://github.com/k8s-gateway/k8s_gateway
 maintainers:
   - url: https://github.com/samip5
     name: samip5
 annotations:
   artifacthub.io/changes: |
-    - kind: added
-      description: add conditional RBAC rule for Node resources when Node is a watched resource
+    - kind: changed
+      description: bump app version to 1.8.0

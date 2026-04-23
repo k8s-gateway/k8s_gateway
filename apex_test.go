@@ -276,3 +276,35 @@ func TestSOASerialDynamic(t *testing.T) {
 
 	t.Logf("Serial caching works correctly")
 }
+
+func TestMarkDirty(t *testing.T) {
+	gw := newGateway()
+	gw.Zones = []string{"example.com."}
+
+	state := request.Request{Zone: "example.com."}
+
+	// Initial SOA - dirty starts true, so serial is generated
+	soa1 := gw.soa(state)
+	if soa1.Serial == 0 {
+		t.Fatalf("initial SOA serial should not be 0")
+	}
+
+	// Without markDirty, serial is cached
+	soa2 := gw.soa(state)
+	if soa2.Serial != soa1.Serial {
+		t.Errorf("serial should be cached without markDirty: got %d, want %d", soa2.Serial, soa1.Serial)
+	}
+
+	// After markDirty, a new serial is generated
+	gw.markDirty()
+	soa3 := gw.soa(state)
+	if soa3.Serial < soa1.Serial {
+		t.Errorf("serial after markDirty should not decrease: got %d, had %d", soa3.Serial, soa1.Serial)
+	}
+
+	// Serial is cached again after regeneration
+	soa4 := gw.soa(state)
+	if soa4.Serial != soa3.Serial {
+		t.Errorf("serial should be cached after markDirty: got %d, want %d", soa4.Serial, soa3.Serial)
+	}
+}
