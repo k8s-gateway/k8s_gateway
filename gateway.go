@@ -27,6 +27,7 @@ var staticResources = []*resourceWithIndex{
 	{name: "GRPCRoute", lookup: noop},
 	{name: "Ingress", lookup: noop},
 	{name: "Service", lookup: noop},
+	{name: "HeadlessService", lookup: noop},
 	{name: "DNSEndpoint", lookup: noop},
 	{name: "Node", lookup: noop},
 }

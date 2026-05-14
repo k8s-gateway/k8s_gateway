@@ -15,6 +15,7 @@ This plugin relies on its own connection to the k8s API server and doesn't share
 | GRPCRoute<sup>[1](#foot1) | all FQDNs from `spec.hostnames` matching configured zones | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
 | Ingress | all FQDNs from `spec.rules[*].host` matching configured zones | `.status.loadBalancer.ingress` |
 | Service<sup>[3](#foot3)</sup> | `name.namespace` + any of the configured zones OR any string consisting of lower case alphanumeric characters, '-' or '.', specified in the `coredns.io/hostname` or `external-dns.alpha.kubernetes.io/hostname` annotations (see [this](https://github.com/k8s-gateway/k8s_gateway/blob/master/test/single-stack/service-annotation.yml#L8) for an example) | `.status.loadBalancer.ingress` |
+| HeadlessService<sup>[5](#foot5)</sup> | `name.namespace` + any of the configured zones OR custom hostnames from `coredns.io/hostname` or `external-dns.alpha.kubernetes.io/hostname` annotations | Pod IPs from EndpointSlices (ready endpoints only) |
 | DNSEndpoint<sup>[4](#foot4)</sup> | `spec.endpoints[*].targets` | |
 
 
@@ -22,6 +23,7 @@ This plugin relies on its own connection to the k8s API server and doesn't share
 <a name="f2">2</a>: Gateway is a separate resource specified in the `spec.parentRefs` of HTTPRoute|TLSRoute|GRPCRoute.</br>
 <a name="f3">3</a>: Only resolves service of type LoadBalancer</br>
 <a name="f4">4</a>: Requires external-dns CRDs</br>
+<a name="f5">5</a>: Only resolves headless services (ClusterIP: None) with the annotation `k8s-gateway.dns/resolve-endpoints: "true"`</br>
 
 Currently, supports A and AAAA-type queries, all other queries result in NODATA responses.
 
@@ -67,7 +69,7 @@ k8s_gateway [ZONES...]
 }
 ```
 
-* `resources` a subset of supported Kubernetes resources to watch. Available options are `[ Ingress | Service | HTTPRoute | TLSRoute | GRPCRoute | DNSEndpoint ]`. If no resources are specified only `Ingress` and `Service` will be monitored
+* `resources` a subset of supported Kubernetes resources to watch. Available options are `[ Ingress | Service | HeadlessService | HTTPRoute | TLSRoute | GRPCRoute | DNSEndpoint ]`. If no resources are specified only `Ingress` and `Service` will be monitored
 * `ingressClasses` to filter `Ingress` resources by `ingressClassName` values. Watches all by default.
 * `gatewayClasses` to filter `Gateway` resources by `gatewayClassName` values. Watches all by default.
 * `serviceLabelSelectors` to filter `Service` resources by labels using one or more [Kubernetes label selector](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors) strings. Each selector creates a separate watch; results are merged. Watches all by default.
@@ -126,6 +128,24 @@ To monitor any of the resources `k8s_gateway` requires the following permissions
     - list
     - watch
   ```
+* **HeadlessService**
+  ```yaml
+  - apiGroups:
+    - ""
+    resources:
+    - services
+    - namespaces
+    verbs:
+    - list
+    - watch
+  - apiGroups:
+    - discovery.k8s.io
+    resources:
+    - endpointslices
+    verbs:
+    - list
+    - watch
+  ```
 * **HTTPRoute, TLSRoute, GRPCRoute**
   ```yaml
   - apiGroups:
@@ -176,12 +196,96 @@ spec:
 This label works for all supported resource types:
 - **Ingress** resources
 - **Service** resources (of type LoadBalancer)
+- **HeadlessService** resources
 - **HTTPRoute** resources
 - **TLSRoute** resources  
 - **GRPCRoute** resources
 - **DNSEndpoint** resources
 
 When a resource is excluded using this label, the plugin will not return it's address.
+
+## Headless Service Support
+
+`k8s_gateway` can resolve headless services (services with `ClusterIP: None`) to return all pod IPs from the associated EndpointSlices. This is useful for scenarios where you need to expose StatefulSet pods or other workloads with stable network identities via DNS.
+
+### Enabling Headless Service Resolution
+
+To enable headless service resolution:
+
+1. **Add the resource to your Corefile configuration:**
+   ```
+   k8s_gateway example.com {
+       resources Service HeadlessService
+   }
+   ```
+
+2. **Annotate your headless service:**
+   Headless services require the annotation `k8s-gateway.dns/resolve-endpoints: "true"` to be included in DNS resolution:
+   
+   ```yaml
+   apiVersion: v1
+   kind: Service
+   metadata:
+     name: my-statefulset
+     namespace: default
+     annotations:
+       k8s-gateway.dns/resolve-endpoints: "true"
+   spec:
+     clusterIP: None  # This makes it a headless service
+     selector:
+       app: my-app
+     ports:
+       - port: 80
+   ```
+
+   When queried, `my-statefulset.default.example.com` will return all ready pod IPs.
+
+### Custom Hostnames for Headless Services
+
+Like regular LoadBalancer services, headless services support custom hostname annotations:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-statefulset
+  namespace: default
+  annotations:
+    k8s-gateway.dns/resolve-endpoints: "true"
+    coredns.io/hostname: "custom.example.com"
+spec:
+  clusterIP: None
+  selector:
+    app: my-app
+  ports:
+    - port: 80
+```
+
+You can also specify multiple hostnames using comma separation:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-statefulset
+  namespace: default
+  annotations:
+    k8s-gateway.dns/resolve-endpoints: "true"
+    external-dns.alpha.kubernetes.io/hostname: "app1.example.com,app2.example.com"
+spec:
+  clusterIP: None
+  selector:
+    app: my-app
+  ports:
+    - port: 80
+```
+
+### Important Notes
+
+- **Opt-in only**: Headless services are NOT resolved by default. You must add the `k8s-gateway.dns/resolve-endpoints: "true"` annotation to enable resolution.
+- **Ready endpoints only**: Only endpoints marked as ready in the EndpointSlices are returned.
+- **Dual-stack support**: Both IPv4 and IPv6 addresses are returned if available.
+- **EndpointSlice API**: This feature uses the Kubernetes EndpointSlice API (discovery.k8s.io/v1), which is available in Kubernetes 1.21+.
 
 ## Dual Nameserver Deployment
 

@@ -1,0 +1,116 @@
+---
+# StatefulSet with backend pods
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: backend-stateful
+  namespace: default
+spec:
+  serviceName: backend-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend-stateful
+  template:
+    metadata:
+      labels:
+        app: backend-stateful
+    spec:
+      containers:
+        - name: nginx
+          image: nginx
+          ports:
+            - containerPort: 80
+              name: web
+---
+# Headless service with default hostname (backend-headless.default)
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-headless
+  namespace: default
+  annotations:
+    k8s-gateway.dns/resolve-endpoints: "true"
+spec:
+  clusterIP: None
+  ports:
+    - port: 80
+      protocol: TCP
+      targetPort: 80
+  selector:
+    app: backend-stateful
+  sessionAffinity: None
+---
+# Headless service with custom hostname annotation
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-headless-custom
+  namespace: default
+  annotations:
+    k8s-gateway.dns/resolve-endpoints: "true"
+    coredns.io/hostname: "custom.example.com"
+spec:
+  clusterIP: None
+  ports:
+    - port: 80
+      protocol: TCP
+      targetPort: 80
+  selector:
+    app: backend-stateful
+  sessionAffinity: None
+---
+# Headless service with multiple custom hostnames
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-headless-multi
+  namespace: default
+  annotations:
+    k8s-gateway.dns/resolve-endpoints: "true"
+    external-dns.alpha.kubernetes.io/hostname: "multi1.example.com,multi2.example.com"
+spec:
+  clusterIP: None
+  ports:
+    - port: 80
+      protocol: TCP
+      targetPort: 80
+  selector:
+    app: backend-stateful
+  sessionAffinity: None
+---
+# Headless service WITHOUT the resolve-endpoints annotation (should be ignored)
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-headless-ignored
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+    - port: 80
+      protocol: TCP
+      targetPort: 80
+  selector:
+    app: backend-stateful
+  sessionAffinity: None
+---
+# Headless service with ignore label (should be ignored)
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-headless-ignored-label
+  namespace: default
+  labels:
+    k8s-gateway.dns/ignore: "true"
+  annotations:
+    k8s-gateway.dns/resolve-endpoints: "true"
+spec:
+  clusterIP: None
+  ports:
+    - port: 80
+      protocol: TCP
+      targetPort: 80
+  selector:
+    app: backend-stateful
+  sessionAffinity: None
