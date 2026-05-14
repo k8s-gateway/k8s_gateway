@@ -1,6 +1,6 @@
 module github.com/k8s-gateway/k8s_gateway
 
-go 1.26.1
+go 1.26
 
 require (
 	github.com/coredns/caddy v1.1.4
