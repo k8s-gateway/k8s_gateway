@@ -15,8 +15,8 @@ This plugin relies on its own connection to the k8s API server and doesn't share
 | GRPCRoute<sup>[1](#foot1) | all FQDNs from `spec.hostnames` matching configured zones | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
 | Ingress | all FQDNs from `spec.rules[*].host` matching configured zones | `.status.loadBalancer.ingress` |
 | Service<sup>[3](#foot3)</sup> | `name.namespace` + any of the configured zones OR any string consisting of lower case alphanumeric characters, '-' or '.', specified in the `coredns.io/hostname` or `external-dns.alpha.kubernetes.io/hostname` annotations (see [this](https://github.com/k8s-gateway/k8s_gateway/blob/master/test/single-stack/service-annotation.yml#L8) for an example) | `.status.loadBalancer.ingress` |
-| HeadlessService<sup>[5](#foot5)</sup> | `name.namespace` + any of the configured zones OR custom hostnames from `coredns.io/hostname` or `external-dns.alpha.kubernetes.io/hostname` annotations | Pod IPs from EndpointSlices (ready endpoints only) |
 | DNSEndpoint<sup>[4](#foot4)</sup> | `spec.endpoints[*].targets` | |
+| HeadlessService<sup>[5](#foot5)</sup> | `name.namespace` + any of the configured zones OR custom hostnames from `coredns.io/hostname` or `external-dns.alpha.kubernetes.io/hostname` annotations | Pod IPs from EndpointSlices (ready endpoints only) |
 
 
 <a name="f1">1</a>: Currently supported version of GatewayAPI CRDs is v1.0.0+ experimental channel.</br>
