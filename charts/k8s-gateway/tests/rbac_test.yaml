@@ -52,8 +52,12 @@ tests:
           content: watch
         documentIndex: 0
       - contains:
+          path: rules[2].apiGroups
+          content: discovery.k8s.io
+        documentIndex: 0
+      - contains:
           path: rules[2].resources
-          content: ingresses
+          content: endpointslices
         documentIndex: 0
       - contains:
           path: rules[2].verbs
@@ -61,6 +65,18 @@ tests:
         documentIndex: 0
       - contains:
           path: rules[2].verbs
+          content: watch
+        documentIndex: 0
+      - contains:
+          path: rules[3].resources
+          content: ingresses
+        documentIndex: 0
+      - contains:
+          path: rules[3].verbs
+          content: list
+        documentIndex: 0
+      - contains:
+          path: rules[3].verbs
           content: watch
         documentIndex: 0
 

@@ -745,7 +745,12 @@ func TestMultiSelectorServiceLookup(t *testing.T) {
 		&fakeSharedIndexInformer{indexer: indexer2},
 	}
 
-	lookup := lookupServiceIndex(controllers)
+	endpointSliceIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		endpointSliceServiceIndex: endpointSliceServiceIndexFunc,
+	})
+	endpointSliceInformer := &fakeSharedIndexInformer{indexer: endpointSliceIndexer}
+
+	lookup := lookupServiceIndex(controllers, endpointSliceInformer)
 
 	t.Run("union of disjoint selectors returns both services", func(t *testing.T) {
 		results1, _ := lookup([]string{"service1.example.com"})
