@@ -691,6 +691,7 @@ func endpointSliceAddresses(endpointSliceController cache.SharedIndexInformer, s
 	endpointSliceObjs, _ := endpointSliceController.GetIndexer().ByIndex(endpointSliceServiceIndex, endpointSliceKey)
 	log.Debugf("Found %d EndpointSlices for service %s", len(endpointSliceObjs), endpointSliceKey)
 
+	seen := make(map[netip.Addr]struct{})
 	for _, esObj := range endpointSliceObjs {
 		endpointSlice, _ := esObj.(*discovery.EndpointSlice)
 		for _, endpoint := range endpointSlice.Endpoints {
@@ -703,6 +704,10 @@ func endpointSliceAddresses(endpointSliceController cache.SharedIndexInformer, s
 					log.Debugf("Failed to parse endpoint address %s: %v", addr, err)
 					continue
 				}
+				if _, dup := seen[ip]; dup {
+					continue
+				}
+				seen[ip] = struct{}{}
 				result = append(result, ip)
 			}
 		}
