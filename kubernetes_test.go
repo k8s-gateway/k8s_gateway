@@ -8,6 +8,7 @@ import (
 	"github.com/coredns/coredns/plugin/test"
 	"github.com/miekg/dns"
 	core "k8s.io/api/core/v1"
+	discovery "k8s.io/api/discovery/v1"
 	networking "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -745,7 +746,12 @@ func TestMultiSelectorServiceLookup(t *testing.T) {
 		&fakeSharedIndexInformer{indexer: indexer2},
 	}
 
-	lookup := lookupServiceIndex(controllers)
+	endpointSliceIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		endpointSliceServiceIndex: endpointSliceServiceIndexFunc,
+	})
+	endpointSliceInformer := &fakeSharedIndexInformer{indexer: endpointSliceIndexer}
+
+	lookup := lookupServiceIndex(controllers, endpointSliceInformer)
 
 	t.Run("union of disjoint selectors returns both services", func(t *testing.T) {
 		results1, _ := lookup([]string{"service1.example.com"})
@@ -773,4 +779,199 @@ func TestMultiSelectorServiceLookup(t *testing.T) {
 			t.Errorf("expected 1 result after dedup, got %d: %v", len(results), results)
 		}
 	})
+}
+
+func TestResolveEndpointsRequested(t *testing.T) {
+	cases := []struct {
+		name        string
+		annotations map[string]string
+		expected    bool
+	}{
+		{"opt-in true", map[string]string{resolveEndpointsAnnotationKey: "true"}, true},
+		{"explicit false", map[string]string{resolveEndpointsAnnotationKey: "false"}, false},
+		{"non-true value", map[string]string{resolveEndpointsAnnotationKey: "yes"}, false},
+		{"absent", map[string]string{}, false},
+		{"nil annotations", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			service := &core.Service{ObjectMeta: metav1.ObjectMeta{Annotations: tc.annotations}}
+			if got := resolveEndpointsRequested(service); got != tc.expected {
+				t.Errorf("resolveEndpointsRequested = %v, want %v", got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestIsLoadBalancerService(t *testing.T) {
+	lb := &core.Service{Spec: core.ServiceSpec{Type: core.ServiceTypeLoadBalancer}}
+	if !isLoadBalancerService(lb) {
+		t.Errorf("expected LoadBalancer service to report true")
+	}
+	clusterIP := &core.Service{Spec: core.ServiceSpec{Type: core.ServiceTypeClusterIP}}
+	if isLoadBalancerService(clusterIP) {
+		t.Errorf("expected ClusterIP service to report false")
+	}
+}
+
+func TestEndpointSliceServiceIndexFunc(t *testing.T) {
+	t.Run("valid service-name label", func(t *testing.T) {
+		es := &discovery.EndpointSlice{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "backend-abc12",
+				Namespace: "default",
+				Labels:    map[string]string{discovery.LabelServiceName: "backend"},
+			},
+		}
+		keys, err := endpointSliceServiceIndexFunc(es)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(keys) != 1 || keys[0] != "default/backend" {
+			t.Errorf("expected [default/backend], got %v", keys)
+		}
+	})
+
+	t.Run("missing service-name label", func(t *testing.T) {
+		es := &discovery.EndpointSlice{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "default", Labels: map[string]string{"other": "x"}},
+		}
+		keys, _ := endpointSliceServiceIndexFunc(es)
+		if len(keys) != 0 {
+			t.Errorf("expected no keys, got %v", keys)
+		}
+	})
+
+	t.Run("nil labels", func(t *testing.T) {
+		es := &discovery.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Namespace: "default"}}
+		keys, _ := endpointSliceServiceIndexFunc(es)
+		if len(keys) != 0 {
+			t.Errorf("expected no keys, got %v", keys)
+		}
+	})
+
+	t.Run("wrong object type", func(t *testing.T) {
+		keys, _ := endpointSliceServiceIndexFunc(&core.Service{})
+		if len(keys) != 0 {
+			t.Errorf("expected no keys for non-EndpointSlice object, got %v", keys)
+		}
+	})
+}
+
+func TestEndpointSliceAddresses(t *testing.T) {
+	ready := true
+	notReady := false
+
+	es1 := &discovery.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "backend-1",
+			Namespace: "default",
+			Labels:    map[string]string{discovery.LabelServiceName: "backend"},
+		},
+		Endpoints: []discovery.Endpoint{
+			{Addresses: []string{"10.1.0.1"}, Conditions: discovery.EndpointConditions{Ready: &ready}},
+			{Addresses: []string{"10.1.0.2"}, Conditions: discovery.EndpointConditions{Ready: &notReady}}, // excluded
+			{Addresses: []string{"10.1.0.3"}},                                                             // nil Ready -> treated as ready
+			{Addresses: []string{"fd00::1"}, Conditions: discovery.EndpointConditions{Ready: &ready}},     // IPv6
+			{Addresses: []string{"not-an-ip"}, Conditions: discovery.EndpointConditions{Ready: &ready}},   // skipped
+		},
+	}
+	es2 := &discovery.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "backend-2",
+			Namespace: "default",
+			Labels:    map[string]string{discovery.LabelServiceName: "backend"},
+		},
+		Endpoints: []discovery.Endpoint{
+			{Addresses: []string{"10.1.0.1"}, Conditions: discovery.EndpointConditions{Ready: &ready}}, // duplicate across slices
+			{Addresses: []string{"10.1.0.4"}, Conditions: discovery.EndpointConditions{Ready: &ready}},
+		},
+	}
+
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		endpointSliceServiceIndex: endpointSliceServiceIndexFunc,
+	})
+	if err := indexer.Add(es1); err != nil {
+		t.Fatalf("failed to add es1: %v", err)
+	}
+	if err := indexer.Add(es2); err != nil {
+		t.Fatalf("failed to add es2: %v", err)
+	}
+	informer := &fakeSharedIndexInformer{indexer: indexer}
+
+	service := &core.Service{ObjectMeta: metav1.ObjectMeta{Name: "backend", Namespace: "default"}}
+	addrs := endpointSliceAddresses(informer, service)
+
+	got := make(map[string]bool, len(addrs))
+	for _, a := range addrs {
+		got[a.String()] = true
+	}
+
+	want := []string{"10.1.0.1", "10.1.0.3", "fd00::1", "10.1.0.4"}
+	if len(addrs) != len(want) {
+		t.Fatalf("expected %d addresses %v, got %d: %v", len(want), want, len(addrs), addrs)
+	}
+	for _, w := range want {
+		if !got[w] {
+			t.Errorf("expected address %s in result, got %v", w, addrs)
+		}
+	}
+	if got["10.1.0.2"] {
+		t.Errorf("not-ready address 10.1.0.2 should be excluded, got %v", addrs)
+	}
+}
+
+func TestLookupServiceIndexResolvesEndpoints(t *testing.T) {
+	ready := true
+
+	// Headless service opting in to endpoint resolution (no LoadBalancer ingress).
+	service := &core.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "backend",
+			Namespace:   "default",
+			Annotations: map[string]string{resolveEndpointsAnnotationKey: "true"},
+		},
+		Spec: core.ServiceSpec{Type: core.ServiceTypeClusterIP, ClusterIP: core.ClusterIPNone},
+	}
+
+	serviceIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		serviceHostnameIndex: serviceHostnameIndexFunc,
+	})
+	if err := serviceIndexer.Add(service); err != nil {
+		t.Fatalf("failed to add service: %v", err)
+	}
+
+	es := &discovery.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "backend-1",
+			Namespace: "default",
+			Labels:    map[string]string{discovery.LabelServiceName: "backend"},
+		},
+		Endpoints: []discovery.Endpoint{
+			{Addresses: []string{"10.2.0.1"}, Conditions: discovery.EndpointConditions{Ready: &ready}},
+			{Addresses: []string{"10.2.0.2"}, Conditions: discovery.EndpointConditions{Ready: &ready}},
+		},
+	}
+	endpointSliceIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		endpointSliceServiceIndex: endpointSliceServiceIndexFunc,
+	})
+	if err := endpointSliceIndexer.Add(es); err != nil {
+		t.Fatalf("failed to add endpoint slice: %v", err)
+	}
+
+	lookup := lookupServiceIndex(
+		[]cache.SharedIndexInformer{&fakeSharedIndexInformer{indexer: serviceIndexer}},
+		&fakeSharedIndexInformer{indexer: endpointSliceIndexer},
+	)
+
+	// Default hostname for an opted-in service is name.namespace.
+	results, _ := lookup([]string{"backend.default"})
+
+	got := make(map[string]bool, len(results))
+	for _, a := range results {
+		got[a.String()] = true
+	}
+	if len(results) != 2 || !got["10.2.0.1"] || !got["10.2.0.2"] {
+		t.Errorf("expected endpoint IPs [10.2.0.1 10.2.0.2], got %v", results)
+	}
 }

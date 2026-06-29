@@ -14,14 +14,15 @@ This plugin relies on its own connection to the k8s API server and doesn't share
 | TLSRoute<sup>[1](#foot1) | all FQDNs from `spec.hostnames` matching configured zones | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
 | GRPCRoute<sup>[1](#foot1) | all FQDNs from `spec.hostnames` matching configured zones | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
 | Ingress | all FQDNs from `spec.rules[*].host` matching configured zones | `.status.loadBalancer.ingress` |
-| Service<sup>[3](#foot3)</sup> | `name.namespace` + any of the configured zones OR any string consisting of lower case alphanumeric characters, '-' or '.', specified in the `coredns.io/hostname` or `external-dns.alpha.kubernetes.io/hostname` annotations (see [this](https://github.com/k8s-gateway/k8s_gateway/blob/master/test/single-stack/service-annotation.yml#L8) for an example) | `.status.loadBalancer.ingress` |
+| Service<sup>[3](#foot3)</sup> | `name.namespace` + any of the configured zones OR any string consisting of lower case alphanumeric characters, '-' or '.', specified in the `coredns.io/hostname` or `external-dns.alpha.kubernetes.io/hostname` annotations (see [this](https://github.com/k8s-gateway/k8s_gateway/blob/master/test/single-stack/service-annotation.yml#L8) for an example) | `.status.loadBalancer.ingress` by default, or pod IPs from EndpointSlices when opted in<sup>[5](#f5)</sup> |
 | DNSEndpoint<sup>[4](#foot4)</sup> | `spec.endpoints[*].targets` | |
 
 
 <a name="f1">1</a>: Currently supported version of GatewayAPI CRDs is v1.0.0+ experimental channel.</br>
 <a name="f2">2</a>: Gateway is a separate resource specified in the `spec.parentRefs` of HTTPRoute|TLSRoute|GRPCRoute.</br>
-<a name="f3">3</a>: Only resolves service of type LoadBalancer</br>
+<a name="f3">3</a>: Resolves services of type LoadBalancer, plus any service that opts in to endpoint resolution (see footnote 5).</br>
 <a name="f4">4</a>: Requires external-dns CRDs</br>
+<a name="f5">5</a>: When a service carries the annotation `k8s-gateway.dns/resolve-endpoints: "true"`, its ready pod IPs from EndpointSlices are returned in place of the LoadBalancer IP. This works for any service type (LoadBalancer, ClusterIP, or headless `ClusterIP: None`).</br>
 
 Currently, supports A and AAAA-type queries, all other queries result in NODATA responses.
 
@@ -115,13 +116,20 @@ To monitor any of the resources `k8s_gateway` requires the following permissions
     - list
     - watch
   ```
-* **Service**
+* **Service** (the `endpointslices` permission is required so that services with the `resolve-endpoints` annotation can be resolved to pod IPs; see [Endpoint Resolution](#endpoint-resolution))
   ```yaml
   - apiGroups:
     - ""
     resources:
     - services
     - namespaces
+    verbs:
+    - list
+    - watch
+  - apiGroups:
+    - discovery.k8s.io
+    resources:
+    - endpointslices
     verbs:
     - list
     - watch
@@ -175,13 +183,86 @@ spec:
 
 This label works for all supported resource types:
 - **Ingress** resources
-- **Service** resources (of type LoadBalancer)
+- **Service** resources (of type LoadBalancer, or any service with the `resolve-endpoints` annotation)
 - **HTTPRoute** resources
 - **TLSRoute** resources  
 - **GRPCRoute** resources
 - **DNSEndpoint** resources
 
 When a resource is excluded using this label, the plugin will not return it's address.
+
+## Endpoint Resolution
+
+By default, when the `Service` resource is enabled, `k8s_gateway` resolves a Service to the IP(s) listed in `.status.loadBalancer.ingress`. Any Service can opt in to **endpoint resolution** instead by adding the annotation `k8s-gateway.dns/resolve-endpoints: "true"` — in that case the Service's ready pod IPs are returned from its EndpointSlices, regardless of Service type. This is typically used with headless services (`ClusterIP: None`) to expose StatefulSet pods or other workloads with stable network identities via DNS, but it works for any Service type.
+
+### Enabling Endpoint Resolution
+
+No additional Corefile option is needed — as long as `Service` is in your `resources` list (which is the default), annotated services are picked up automatically.
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-statefulset
+  namespace: default
+  annotations:
+    k8s-gateway.dns/resolve-endpoints: "true"
+spec:
+  clusterIP: None  # commonly headless, but not required
+  selector:
+    app: my-app
+  ports:
+    - port: 80
+```
+
+When queried, `my-statefulset.default.example.com` will return all ready pod IPs.
+
+### Custom Hostnames
+
+Custom hostname annotations work the same as for LoadBalancer services:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-statefulset
+  namespace: default
+  annotations:
+    k8s-gateway.dns/resolve-endpoints: "true"
+    coredns.io/hostname: "custom.example.com"
+spec:
+  clusterIP: None
+  selector:
+    app: my-app
+  ports:
+    - port: 80
+```
+
+Multiple hostnames can be specified using comma separation:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-statefulset
+  namespace: default
+  annotations:
+    k8s-gateway.dns/resolve-endpoints: "true"
+    external-dns.alpha.kubernetes.io/hostname: "app1.example.com,app2.example.com"
+spec:
+  clusterIP: None
+  selector:
+    app: my-app
+  ports:
+    - port: 80
+```
+
+### Important Notes
+
+- **Opt-in only**: Endpoint resolution is NOT applied by default. Without the `k8s-gateway.dns/resolve-endpoints: "true"` annotation, the existing LoadBalancer-IP behavior is used.
+- **Ready endpoints only**: Only endpoints marked as ready in the EndpointSlices are returned.
+- **Dual-stack support**: Both IPv4 and IPv6 addresses are returned if available.
+- **EndpointSlice API**: This feature uses the Kubernetes EndpointSlice API (discovery.k8s.io/v1), which is available in Kubernetes 1.21+.
 
 ## Dual Nameserver Deployment
 

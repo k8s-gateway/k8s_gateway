@@ -11,6 +11,7 @@ import (
 
 	"github.com/miekg/dns"
 	core "k8s.io/api/core/v1"
+	discovery "k8s.io/api/discovery/v1"
 	networking "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -30,6 +31,7 @@ const (
 	defaultResyncPeriod              = 0
 	ingressHostnameIndex             = "ingressHostname"
 	serviceHostnameIndex             = "serviceHostname"
+	endpointSliceServiceIndex        = "endpointSliceService"
 	gatewayUniqueIndex               = "gatewayIndex"
 	httpRouteHostnameIndex           = "httpRouteHostname"
 	tlsRouteHostnameIndex            = "tlsRouteHostname"
@@ -38,6 +40,7 @@ const (
 	hostnameAnnotationKey            = "coredns.io/hostname"
 	externalDnsHostnameAnnotationKey = "external-dns.alpha.kubernetes.io/hostname"
 	ignoreLabelKey                   = "k8s-gateway.dns/ignore"
+	resolveEndpointsAnnotationKey    = "k8s-gateway.dns/resolve-endpoints"
 )
 
 var (
@@ -144,7 +147,19 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 						serviceControllers = append(serviceControllers, sc)
 						ctrl.controllers = append(ctrl.controllers, sc)
 					}
-					resource.lookup = lookupServiceIndex(serviceControllers)
+
+					endpointSliceController := cache.NewSharedIndexInformer(
+						&cache.ListWatch{
+							ListFunc:  endpointSliceLister(ctx, ctrl.client, core.NamespaceAll),
+							WatchFunc: endpointSliceWatcher(ctx, ctrl.client, core.NamespaceAll),
+						},
+						&discovery.EndpointSlice{},
+						defaultResyncPeriod,
+						cache.Indexers{endpointSliceServiceIndex: endpointSliceServiceIndexFunc},
+					)
+					ctrl.controllers = append(ctrl.controllers, endpointSliceController)
+
+					resource.lookup = lookupServiceIndex(serviceControllers, endpointSliceController)
 					log.Infof("Service controller initialized")
 				}
 			}
@@ -432,6 +447,18 @@ func serviceWatcher(ctx context.Context, c kubernetes.Interface, ns string, labe
 	}
 }
 
+func endpointSliceLister(ctx context.Context, c kubernetes.Interface, ns string) func(metav1.ListOptions) (runtime.Object, error) {
+	return func(opts metav1.ListOptions) (runtime.Object, error) {
+		return c.DiscoveryV1().EndpointSlices(ns).List(ctx, opts)
+	}
+}
+
+func endpointSliceWatcher(ctx context.Context, c kubernetes.Interface, ns string) func(metav1.ListOptions) (watch.Interface, error) {
+	return func(opts metav1.ListOptions) (watch.Interface, error) {
+		return c.DiscoveryV1().EndpointSlices(ns).Watch(ctx, opts)
+	}
+}
+
 func gatewayIndexFunc(obj interface{}) ([]string, error) {
 	metaObj, err := meta.Accessor(obj)
 	if err != nil {
@@ -526,13 +553,12 @@ func serviceHostnameIndexFunc(obj interface{}) ([]string, error) {
 		return []string{}, nil
 	}
 
-	// Check if object should be ignored
 	if checkIgnoreLabel(service.Labels) {
 		log.Debugf("Ignoring service %s due to %s label", service.Name, ignoreLabelKey)
 		return []string{}, nil
 	}
 
-	if service.Spec.Type != core.ServiceTypeLoadBalancer {
+	if !isLoadBalancerService(service) && !resolveEndpointsRequested(service) {
 		return []string{}, nil
 	}
 
@@ -549,6 +575,40 @@ func serviceHostnameIndexFunc(obj interface{}) ([]string, error) {
 	}
 
 	return hostnames, nil
+}
+
+func isLoadBalancerService(service *core.Service) bool {
+	return service.Spec.Type == core.ServiceTypeLoadBalancer
+}
+
+// resolveEndpointsRequested reports whether a Service has opted in to
+// endpoint-based DNS resolution via the k8s-gateway.dns/resolve-endpoints
+// annotation. When set, the Service's backing EndpointSlice IPs are returned.
+func resolveEndpointsRequested(service *core.Service) bool {
+	value, ok := service.Annotations[resolveEndpointsAnnotationKey]
+	return ok && value == "true"
+}
+
+func endpointSliceServiceIndexFunc(obj interface{}) ([]string, error) {
+	endpointSlice, ok := obj.(*discovery.EndpointSlice)
+	if !ok {
+		return []string{}, nil
+	}
+
+	// Index by the service name label (kubernetes.io/service-name)
+	if endpointSlice.Labels == nil {
+		return []string{}, nil
+	}
+
+	serviceName, exists := endpointSlice.Labels[discovery.LabelServiceName]
+	if !exists {
+		return []string{}, nil
+	}
+
+	// Create index key as namespace/serviceName
+	indexKey := fmt.Sprintf("%s/%s", endpointSlice.Namespace, serviceName)
+	log.Debugf("Adding endpointSlice index %s for service %s", endpointSlice.Name, indexKey)
+	return []string{indexKey}, nil
 }
 
 func splitHostnameAnnotation(annotation string) []string {
@@ -578,7 +638,7 @@ func checkDomainValid(domain string) bool {
 	return false
 }
 
-func lookupServiceIndex(controllers []cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string) {
+func lookupServiceIndex(controllers []cache.SharedIndexInformer, endpointSliceController cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string) {
 	return func(indexKeys []string) (result []netip.Addr, raw []string) {
 		seen := make(map[string]struct{})
 		var objs []interface{}
@@ -603,6 +663,11 @@ func lookupServiceIndex(controllers []cache.SharedIndexInformer) func([]string) 
 		for _, obj := range objs {
 			service, _ := obj.(*core.Service)
 
+			if resolveEndpointsRequested(service) {
+				result = append(result, endpointSliceAddresses(endpointSliceController, service)...)
+				continue
+			}
+
 			if len(service.Spec.ExternalIPs) > 0 {
 				for _, ip := range service.Spec.ExternalIPs {
 					result = append(result, netip.MustParseAddr(ip))
@@ -615,6 +680,39 @@ func lookupServiceIndex(controllers []cache.SharedIndexInformer) func([]string) 
 		}
 		return
 	}
+}
+
+// endpointSliceAddresses returns the ready endpoint IPs from all EndpointSlices
+// owned by the given Service. Endpoints whose Ready condition is explicitly
+// false are excluded; a nil Ready condition is treated as ready per the
+// EndpointSlice spec.
+func endpointSliceAddresses(endpointSliceController cache.SharedIndexInformer, service *core.Service) (result []netip.Addr) {
+	endpointSliceKey := fmt.Sprintf("%s/%s", service.Namespace, service.Name)
+	endpointSliceObjs, _ := endpointSliceController.GetIndexer().ByIndex(endpointSliceServiceIndex, endpointSliceKey)
+	log.Debugf("Found %d EndpointSlices for service %s", len(endpointSliceObjs), endpointSliceKey)
+
+	seen := make(map[netip.Addr]struct{})
+	for _, esObj := range endpointSliceObjs {
+		endpointSlice, _ := esObj.(*discovery.EndpointSlice)
+		for _, endpoint := range endpointSlice.Endpoints {
+			if endpoint.Conditions.Ready != nil && !*endpoint.Conditions.Ready {
+				continue
+			}
+			for _, addr := range endpoint.Addresses {
+				ip, err := netip.ParseAddr(addr)
+				if err != nil {
+					log.Debugf("Failed to parse endpoint address %s: %v", addr, err)
+					continue
+				}
+				if _, dup := seen[ip]; dup {
+					continue
+				}
+				seen[ip] = struct{}{}
+				result = append(result, ip)
+			}
+		}
+	}
+	return
 }
 
 func lookupHttpRouteIndex(http, gw cache.SharedIndexInformer, gwclasses []string) func([]string) (results []netip.Addr, raws []string) {
