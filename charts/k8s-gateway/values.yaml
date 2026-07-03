@@ -1,163 +1,292 @@
+# Default values for coredns k8s gateway.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
 image:
   registry: ghcr.io
   repository: k8s-gateway/k8s_gateway
+  # Overrides the image tag whose default is the chart appVersion.
   tag: 1.7.0
   pullPolicy: IfNotPresent
-
-# Reference to one or more secrets to be used when pulling images.
-# For more information, see [Pull an Image from a Private Registry](https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/).
-#
-# For example:
-#  imagePullSecrets:
-#    - name: "image-pull-secret"
-imagePullSecrets: []
-
-# Delegated domain
-domain: ""
-
-# Optional scheme for DNS server (e.g., "tls://", "https://", "grpc://")
-# Used to enable DoT (DNS over TLS), DoH (DNS over HTTPS), or gRPC protocols
-# Leave empty for standard DNS
-# See: https://coredns.io/plugins/tls/
-scheme: ""
-
-# Labels to apply to all resources
-customLabels: {}
-
-# Annotations to apply to pods
-podAnnotations: {}
-
-# TTL for non-apex responses (in seconds)
-ttl: 300
-
-# Resources (CPU, memory etc)
-resources: {}
-
-# Limit what kind of resources to watch, e.g. watchedResources: ["Ingress"]
-watchedResources: ["Ingress", "Service"]
-
-filters:
-  ingressClasses: []
-  gatewayClasses: []
-  serviceLabelSelectors: []
-
-# Service name of a secondary DNS server (should be `serviceName.namespace`)
-secondary: ""
-
-# Enabled fallthrough for k8s_gateway
-fallthrough:
-  enabled: false
-  zones: []
-
-# Override the default `serviceName.namespace` domain apex
-apex: ""
-
-# Optional configuration option for DNS01 challenge that will redirect all acme
-# challenge requests to external cloud domain (e.g. managed by cert-manager)
-# See: https://cert-manager.io/docs/configuration/acme/dns01/
-dnsChallenge:
-  enabled: false
-  domain: dns01.clouddns.com
-
-# Optional plugins that will be enabled in the zone, e.g. "forward . /etc/resolve.conf"
-extraZonePlugins:
-  - name: log
-  - name: errors
-  # Serves a /health endpoint on :8080, required for livenessProbe
-  - name: health
-    configBlock: |-
-      lameduck 5s
-  # Serves a /ready endpoint on :8181, required for readinessProbe
-  - name: ready
-  # Serves a /metrics endpoint on :9153, required for serviceMonitor
-  - name: prometheus
-    parameters: 0.0.0.0:9153
-  - name: forward
-    parameters: . /etc/resolv.conf
-  - name: loop
-  - name: reload
-  - name: loadbalance
-  # Example TLS configuration (requires scheme: "tls://" and TLS certificates)
-  # - name: tls
-  #   parameters: /etc/coredns/tls/tls.crt /etc/coredns/tls/tls.key
-  #   configBlock: |-
-  #     client_auth {
-  #       type request
-  #     }
-
-serviceAccount:
-  create: true
-  name: ""
-  annotations: {}
-
-service:
-  type: LoadBalancer
-  port: 53
-  annotations: {}
-  labels: {}
-  # nodePort: 30053
-  # loadBalancerIP: 192.168.1.2
-  # loadBalancerClass:
-  # clusterIP: 10.43.0.53
-  # externalTrafficPolicy: Local
-  # externalIPs:
-  #  - 192.168.1.3
-  # One of SingleStack, PreferDualStack, or RequireDualStack.
-  # ipFamilyPolicy: SingleStack
-  # List of IP families (e.g. IPv4 and/or IPv6).
-  # ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-  # ipFamilies:
-  #   - IPv4
-  #   - IPv6
-  useTcp: false
-
-nodeSelector: {}
-
-tolerations: []
-
-topologySpreadConstraints: []
-
-affinity: {}
+  ## Optionally specify an array of imagePullSecrets.
+  ## Secrets must be manually created in the namespace.
+  ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+  ##
+  pullSecrets: []
+  # pullSecrets:
+  #   - name: myRegistryKeySecretName
 
 replicaCount: 1
 
-# Optional PriorityClass that will be used in the Deployment, e.g. priorityClassName: "system-cluster-critical"
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+rollingUpdate:
+  maxUnavailable: 1
+  maxSurge: 25%
+
+terminationGracePeriodSeconds: 30
+
+podAnnotations: {}
+
+podLabels: {}
+
+
+service:
+  type: "LoadBalancer"
+  # clusterIP: ""
+  # clusterIPs: []
+  # loadBalancerIP: ""
+  # loadBalancerClass: ""
+  # externalIPs: []
+  # externalTrafficPolicy: ""
+  # ipFamilyPolicy: ""
+  # trafficDistribution: PreferClose
+  # The name of the Service
+  # If not set, a name is generated using the fullname template
+  name: ""
+  annotations: {}
+  labels: {}
+  # Pod selector
+  selector: {}
+
+serviceAccount:
+  create: true
+  # The name of the ServiceAccount to use
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+  annotations: {}
+
+
+clusterRole:
+  # By default a name is generated using the fullname template.
+  # Override here if desired:
+  nameOverride: ""
+
+# Optional priority class to be used for the coredns pods.
 priorityClassName: ""
 
-debug:
-  enabled: false
-
-secure: true
-
+# Configure the pod level securityContext.
 podSecurityContext: {}
 
-securityContext: {}
+# Configure SecurityContext for Pod.
+# Ensure that required linux capability to bind port number below 1024 is assigned (`CAP_NET_BIND_SERVICE`).
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    add:
+      - NET_BIND_SERVICE
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
 
-# file plugin
+# Default zone is what Kubernetes recommends:
+# https://kubernetes.io/docs/tasks/administer-cluster/dns-custom-nameservers/#coredns-configmap-options
+servers:
+  - zones:
+    - zone: .
+      use_tcp: true
+    port: 53
+    # -- expose the service on a different port
+    # servicePort: 5353
+    # If serviceType is nodePort you can specify nodePort here
+    # nodePort: 30053
+    # hostPort: 53
+    plugins:
+    - name: errors
+    # Serves a /health endpoint on :8080, required for livenessProbe
+    - name: health
+      configBlock: |-
+        lameduck 10s
+    # Serves a /ready endpoint on :8181, required for readinessProbe
+    - name: ready
+    # Required to query k8s_gateway API for data
+    - name: k8s_gateway
+      parameters: example.com
+      configBlock: |-
+        apex dns.example.com
+        ttl 30
+        resources Service HTTPRoute
+        fallthrough in-addr.arpa ip6.arpa
+    - name: forward
+      parameters: . /etc/resolv.conf
+    - name: cache
+      parameters: 30
+    - name: loop
+    - name: reload
+    - name: loadbalance
+
+# Complete example with all the options:
+# - zones:                 # the `zones` block can be left out entirely, defaults to "."
+#   - zone: hello.world.   # optional, defaults to "."
+#     scheme: tls://       # optional, defaults to "" (which equals "dns://" in CoreDNS)
+#   - zone: foo.bar.
+#     scheme: dns://
+#     use_tcp: true        # set this parameter to optionally expose the port on tcp as well as udp for the DNS protocol
+#                          # Note that this will not work if you are also exposing tls or grpc on the same server
+#   port: 12345            # optional, defaults to "" (which equals 53 in CoreDNS)
+#   plugins:               # the plugins to use for this server block
+#   - name: k8s_gateway     # name of plugin, if used multiple times ensure that the plugin supports it!
+#     parameters: foo bar  # list of parameters after the plugin
+#     configBlock: |-      # if the plugin supports extra block style config, supply it here
+#       hello world
+#       foo bar
+
+# Extra configuration that is applied outside of the default zone block.
+# Example to include additional config files, which may come from extraVolumes:
+# extraConfig:
+#   import:
+#     parameters: /opt/coredns/*.conf
+extraConfig: {}
+
+# To use the livenessProbe, the health plugin needs to be enabled in CoreDNS' server config
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 5
+  successThreshold: 1
+# To use the readinessProbe, the ready plugin needs to be enabled in CoreDNS' server config
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 5
+  timeoutSeconds: 5
+  failureThreshold: 1
+  successThreshold: 1
+
+# expects input structure as per specification https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.11/#affinity-v1-core
+# for example:
+#   affinity:
+#     nodeAffinity:
+#      requiredDuringSchedulingIgnoredDuringExecution:
+#        nodeSelectorTerms:
+#        - matchExpressions:
+#          - key: foo.bar.com/role
+#            operator: In
+#            values:
+#            - master
+affinity: {}
+
+# expects input structure as per specification https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.21/#topologyspreadconstraint-v1-core
+# and supports Helm templating.
+# For example:
+#   topologySpreadConstraints:
+#     - labelSelector:
+#         matchLabels:
+#           app.kubernetes.io/name: '{{ template "coredns.name" . }}'
+#           app.kubernetes.io/instance: '{{ .Release.Name }}'
+#       topologyKey: topology.kubernetes.io/zone
+#       maxSkew: 1
+#       whenUnsatisfiable: ScheduleAnyway
+#     - labelSelector:
+#         matchLabels:
+#           app.kubernetes.io/name: '{{ template "coredns.name" . }}'
+#           app.kubernetes.io/instance: '{{ .Release.Name }}'
+#       topologyKey: kubernetes.io/hostname
+#       maxSkew: 1
+#       whenUnsatisfiable: ScheduleAnyway
+topologySpreadConstraints: []
+
+# Node labels for pod assignment
+# Ref: https://kubernetes.io/docs/user-guide/node-selection/
+nodeSelector: {}
+
+# expects input structure as per specification https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.11/#toleration-v1-core
+# for example:
+#   tolerations:
+#   - key: foo.bar.com/role
+#     operator: Equal
+#     value: master
+#     effect: NoSchedule
+tolerations: []
+
+# configure custom zone files as per https://coredns.io/2017/05/08/custom-dns-entries-for-kubernetes/
 zoneFiles: []
-#    - filename: example.db
-#      # Optional
-#      domains: example.com
-#      fallthrough:
-#       enabled: true
-#       zones:
-#         - test.example.com
-#      reload: 1m
-#      contents: |
-#        example.com.   IN SOA sns.dns.icann.com. noc.dns.icann.com. 2015082541 7200 3600 1209600 3600
-#        example.com.   IN NS  b.iana-servers.net.
-#        example.com.   IN NS  a.iana-servers.net.
-#        example.com.   IN A   192.168.99.102
-#        *.example.com. IN A   192.168.99.102
+#  - filename: example.db
+#    domain: example.com
+#    contents: |
+#      example.com.   IN SOA sns.dns.icann.com. noc.dns.icann.com. 2015082541 7200 3600 1209600 3600
+#      example.com.   IN NS  b.iana-servers.net.
+#      example.com.   IN NS  a.iana-servers.net.
+#      example.com.   IN A   192.168.99.102
+#      *.example.com. IN A   192.168.99.102
 
+# optional array of sidecar containers
+extraContainers: []
+# - name: some-container-name
+#   image: some-image:latest
+#   imagePullPolicy: Always
+# optional array of extra volumes to create
 extraVolumes: []
-# extraVolumes:
-#   - name: tsig-secret
-#     secret:
-#       secretName: tsig-secret
+# - name: some-volume-name
+#   emptyDir: {}
+# optional array of mount points for extraVolumes
 extraVolumeMounts: []
-# extraVolumeMounts:
-#   - name: tsig-volume
-#     mountPath: /etc/tsig
-#     subPath: tsig.key
-#     readOnly: true
+# - name: some-volume-name
+#   mountPath: /etc/wherever
+
+# optional array of secrets to mount inside coredns container
+# possible usecase: need for secure connection with etcd backend
+extraSecrets: []
+# - name: etcd-client-certs
+#   mountPath: /etc/coredns/tls/etcd
+#   defaultMode: 420
+# - name: some-fancy-secret
+#   mountPath: /etc/wherever
+#   defaultMode: 440
+
+# optional array of environment variables for coredns container
+# possible usecase: provides username and password for etcd user authentications
+env: []
+# - name: WHATEVER_ENV
+#   value: whatever
+# - name: SOME_SECRET_ENV
+#   valueFrom:
+#     secretKeyRef:
+#       name: some-secret-name
+#       key: secret-key
+
+# To support legacy deployments using CoreDNS with the "k8s-app: kube-dns" label selectors.
+# See https://github.com/coredns/helm/blob/master/charts/coredns/README.md#adopting-existing-coredns-resources
+# k8sAppLabelOverride: "kube-dns"
+
+# Custom labels to apply to Deployment, Pod, Configmap, Service
+customLabels: {}
+
+# Custom annotations to apply to Deployment, Pod, Configmap, Service.
+customAnnotations: {}
+
+deployment:
+  skipConfig: false
+  enabled: true
+  name: ""
+  ## Annotations for the coredns deployment
+  annotations: {}
+  ## Pod selector
+  selector: {}
+  # dnsPolicy determines how DNS resolution is handled for the pod.
+  # Options: Default, ClusterFirst, ClusterFirstWithHostNet, None
+  # If set to "None", you must provide dnsConfig.
+  dnsPolicy: "Default"
+  # dnsConfig allows fine-grained DNS configuration for the pod.
+  # Only used when dnsPolicy is set to "None" or when custom DNS settings are needed.
+  # Example:
+  #   dnsConfig:
+  #     nameservers:
+  #       - 8.8.8.8
+  #     searches:
+  #       - my.dns.search.suffix
+  #     options:
+  #       - name: ndots
+  #         value: "2"
+  dnsConfig: {}
+
+# Configures initcontainers for the coredns deployment.
+initContainers: []
