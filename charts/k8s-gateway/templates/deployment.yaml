@@ -1,3 +1,4 @@
+{{- if .Values.deployment.enabled }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -26,22 +27,12 @@ spec:
       maxUnavailable: {{ .Values.rollingUpdate.maxUnavailable }}
       maxSurge: {{ .Values.rollingUpdate.maxSurge }}
   selector:
-    {{- if .Values.deployment.selector }}
-    {{- toYaml .Values.deployment.selector | nindent 4 }}
-    {{- else }}
     matchLabels:
       app.kubernetes.io/instance: {{ .Release.Name | quote }}
-      {{- if .Values.isClusterService }}
-      k8s-app: {{ template "k8s-gateway.k8sapplabel" . }}
-      {{- end }}
       app.kubernetes.io/name: {{ template "k8s-gateway.name" . }}
-    {{- end }}
   template:
     metadata:
       labels:
-        {{- if .Values.isClusterService }}
-        k8s-app: {{ template "k8s-gateway.k8sapplabel" . }}
-        {{- end }}
         app.kubernetes.io/name: {{ template "k8s-gateway.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name | quote }}
 {{- if .Values.customLabels }}
@@ -52,9 +43,6 @@ spec:
 {{- end }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        {{- if .Values.isClusterService }}
-        scheduler.alpha.kubernetes.io/tolerations: '[{"key":"CriticalAddonsOnly", "operator":"Exists"}]'
-        {{- end }}
 {{- if .Values.podAnnotations }}
 {{ toYaml .Values.podAnnotations | indent 8 }}
 {{- end }}
@@ -66,9 +54,6 @@ spec:
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       {{- end }}
       serviceAccountName: {{ template "k8s-gateway.serviceAccountName" . }}
-      {{- if eq .Values.automountServiceAccountToken false }}
-      automountServiceAccountToken: false
-      {{- end }}
       {{- if .Values.priorityClassName }}
       priorityClassName: {{ .Values.priorityClassName | quote }}
       {{- end }}
@@ -106,7 +91,7 @@ spec:
       {{- end }}
       containers:
       - name: "k8s-gateway"
-        image: "{{- if .Values.image.registry }}{{ .Values.image.registry }}/{{- end }}{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         args: [ "-conf", "/etc/coredns/Corefile" ]
         volumeMounts:
@@ -178,4 +163,5 @@ spec:
 {{- end }}
 {{- if .Values.extraVolumes }}
 {{ toYaml .Values.extraVolumes | indent 8 }}
+{{- end }}
 {{- end }}

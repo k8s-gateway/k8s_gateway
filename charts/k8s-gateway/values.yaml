@@ -3,10 +3,9 @@
 # Declare variables to be passed into your templates.
 
 image:
-  registry: ghcr.io
-  repository: k8s-gateway/k8s_gateway
+  repository: ghcr.io/k8s-gateway/k8s_gateway
   # Overrides the image tag whose default is the chart appVersion.
-  tag: 1.7.0
+  tag: ""
   pullPolicy: IfNotPresent
   ## Optionally specify an array of imagePullSecrets.
   ## Secrets must be manually created in the namespace.
@@ -17,6 +16,11 @@ image:
   #   - name: myRegistryKeySecretName
 
 replicaCount: 1
+
+rbac:
+  # If true, create & use RBAC resources
+  create: true
+
 
 resources:
   limits:
@@ -36,9 +40,9 @@ podAnnotations: {}
 
 podLabels: {}
 
+serviceType: "LoadBalancer"
 
 service:
-  type: "LoadBalancer"
   # clusterIP: ""
   # clusterIPs: []
   # loadBalancerIP: ""
@@ -51,7 +55,6 @@ service:
   # If not set, a name is generated using the fullname template
   name: ""
   annotations: {}
-  labels: {}
   # Pod selector
   selector: {}
 
@@ -62,12 +65,6 @@ serviceAccount:
   name: ""
   annotations: {}
 
-
-clusterRole:
-  # By default a name is generated using the fullname template.
-  # Override here if desired:
-  nameOverride: ""
-
 # Optional priority class to be used for the coredns pods.
 priorityClassName: ""
 
@@ -75,15 +72,7 @@ priorityClassName: ""
 podSecurityContext: {}
 
 # Configure SecurityContext for Pod.
-# Ensure that required linux capability to bind port number below 1024 is assigned (`CAP_NET_BIND_SERVICE`).
-securityContext:
-  allowPrivilegeEscalation: false
-  capabilities:
-    add:
-      - NET_BIND_SERVICE
-    drop:
-      - ALL
-  readOnlyRootFilesystem: true
+securityContext: {}
 
 # Default zone is what Kubernetes recommends:
 # https://kubernetes.io/docs/tasks/administer-cluster/dns-custom-nameservers/#coredns-configmap-options
@@ -207,6 +196,9 @@ nodeSelector: {}
 #     effect: NoSchedule
 tolerations: []
 
+# https://kubernetes.io/docs/tasks/run-application/configure-pdb/#specifying-a-poddisruptionbudget
+podDisruptionBudget: {}
+
 # configure custom zone files as per https://coredns.io/2017/05/08/custom-dns-entries-for-kubernetes/
 zoneFiles: []
 #  - filename: example.db
@@ -269,8 +261,6 @@ deployment:
   name: ""
   ## Annotations for the coredns deployment
   annotations: {}
-  ## Pod selector
-  selector: {}
   # dnsPolicy determines how DNS resolution is handled for the pod.
   # Options: Default, ClusterFirst, ClusterFirstWithHostNet, None
   # If set to "None", you must provide dnsConfig.

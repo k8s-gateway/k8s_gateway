@@ -1,0 +1,133 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: ClusterRole RBAC Test
+
+templates:
+  - templates/clusterrole.yaml
+
+set:
+  deployment:
+    enabled: true
+  rbac:
+    create: true
+  servers:
+    - zones:
+        - zone: .
+      plugins:
+        - name: k8s_gateway
+          configBlock: |-
+            resources Service HTTPRoute GRPCRoute TLSRoute Ingress DNSEndpoint Node
+
+tests:
+  - it: Should render ClusterRole rules for Ingress and Service by default
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - apiextensions.k8s.io
+            resources:
+              - customresourcedefinitions
+            verbs:
+              - get
+              - list
+              - watch
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - ""
+            resources:
+              - services
+              - namespaces
+            verbs:
+              - list
+              - watch
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - extensions
+              - networking.k8s.io
+            resources:
+              - ingresses
+            verbs:
+              - list
+              - watch
+
+  - it: Should render ClusterRole rules for DNSEndpoint
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - externaldns.k8s.io
+            resources:
+              - dnsendpoints
+            verbs:
+              - get
+              - watch
+              - list
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - externaldns.k8s.io
+            resources:
+              - dnsendpoints/status
+            verbs:
+              - "*"
+
+  - it: Should render ClusterRole rules for Gateway API
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - gateway.networking.k8s.io
+            resources:
+              - httproutes
+              - tlsroutes
+              - grpcroutes
+            verbs:
+              - watch
+              - list
+
+  - it: Should render ClusterRole rules for Node
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - ""
+            resources:
+              - nodes
+            verbs:
+              - list
+              - watch
+
+  - it: Should not render Node rules when Node is not explicitly a watched resource
+    set:
+      servers:
+        - zones:
+            - zone: .
+          plugins:
+            - name: k8s_gateway
+              parameters: example.com
+              configBlock: |-
+                resources Service Ingress
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - notContains:
+          path: rules
+          content:
+            resources:
+              - nodes

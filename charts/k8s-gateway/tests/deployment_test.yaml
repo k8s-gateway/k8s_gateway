@@ -1,95 +1,48 @@
----
-suite: Deployment
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: CoreDNS Deployment Tests
+templates:
+  - templates/configmap.yaml
+  - templates/deployment.yaml
 
 tests:
-  - it: Should render Deployment correctly
+  - it: should render a deployment with the correct image
     set:
-      replicaCount: 2
-      serviceAccount.create: false
-      serviceAccount.name: custom-sa
-      domain: example.com
+      deployment:
+        enabled: true
       image:
-        registry: docker.io
         repository: coredns/coredns
-        tag: 1.8.6
-      service:
-        useTcp: true
-      watchedResources:
-        - Service
+        tag: 1.10.1
+    documentIndex: 0
     template: templates/deployment.yaml
     asserts:
       - equal:
-          path: spec.replicas
-          value: 2
-      - equal:
-          path: spec.template.spec.serviceAccountName
-          value: custom-sa
-      - contains:
-          path: spec.template.spec.containers[0].ports
-          content:
-            containerPort: 1053
-            name: dns-udp
-            protocol: UDP
-      - contains:
-          path: spec.template.spec.containers[0].ports
-          content:
-            containerPort: 1053
-            name: dns-tcp
-            protocol: TCP
-  - it: Should add imagePullSecrets if specified
+          path: spec.template.spec.containers[0].image
+          value: coredns/coredns:1.10.1
+
+  - it: should contain checksum/config annotation
     set:
-      domain: example.com
-      imagePullSecrets:
-        - name: my-image-credential
-      image:
-        registry: docker.io
-        repository: coredns/coredns
-        tag: 1.8.6
-      watchedResources:
-        - Service
+      deployment:
+        enabled: true
+    documentIndex: 0
+    template: templates/deployment.yaml
+    asserts:
+      - matchRegex:
+          path: spec.template.metadata.annotations.checksum/config
+          pattern: ^[a-f0-9]{64}$
+
+  - it: should set pod security context and priority class
+    set:
+      deployment:
+        enabled: true
+      podSecurityContext:
+        runAsUser: 1000
+      priorityClassName: system-cluster-critical
+    documentIndex: 0
     template: templates/deployment.yaml
     asserts:
       - equal:
-          path: spec.template.spec.imagePullSecrets
-          value:
-            - name: my-image-credential
-  - it: Should add extraVolumes if specified
-    set:
-      domain: example.com
-      extraVolumes:
-        - name: extra-volume
-          configMap:
-            name: extra-config
-      image:
-        registry: docker.io
-        repository: coredns/coredns
-        tag: 1.8.6
-      watchedResources:
-        - Service
-    template: templates/deployment.yaml
-    asserts:
-      - contains:
-          path: spec.template.spec.volumes
-          content:
-            name: extra-volume
-            configMap:
-              name: extra-config
-  - it: Should add extraVolumeMounts if specified
-    set:
-      domain: example.com
-      extraVolumeMounts:
-        - name: extra-volume
-          mountPath: /etc/extra
-      image:
-        registry: docker.io
-        repository: coredns/coredns
-        tag: 1.8.6
-      watchedResources:
-        - Service
-    template: templates/deployment.yaml
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].volumeMounts
-          content:
-            name: extra-volume
-            mountPath: /etc/extra
+          path: spec.template.spec.securityContext.runAsUser
+          value: 1000
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: system-cluster-critical

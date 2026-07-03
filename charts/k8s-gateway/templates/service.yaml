@@ -1,35 +1,27 @@
+{{- if .Values.deployment.enabled }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ default (include "k8s-gateway.fullname" .) .Values.service.name }}
   namespace: {{ .Release.Namespace }}
-  labels: 
-  {{- if .Values.service.labels }}
-      {{- toYaml .Values.service.labels | nindent 4 }}
-  {{- end }}
-  {{- include "k8s-gateway.labels" . | nindent 4 }}
-  {{- if .Values.customLabels }}
-  {{ toYaml .Values.customLabels | indent 4 }}
-  {{- end }}
-  {{- if or .Values.service.annotations .Values.customAnnotations }}
+  labels: {{- include "k8s-gateway.labels" . | nindent 4 }}
+{{- if .Values.customLabels }}
+{{ toYaml .Values.customLabels | indent 4 }}
+{{- end }}
   annotations:
-    {{- if .Values.service.annotations }}
-    {{- toYaml .Values.service.annotations | nindent 4 }}
-    {{- end }}
     {{- if .Values.customAnnotations }}
     {{- toYaml .Values.customAnnotations | nindent 4 }}
     {{- end }}
-  {{- end }}
+    {{- if .Values.service.annotations }}
+    {{- toYaml .Values.service.annotations | nindent 4 }}
+    {{- end }}
 spec:
   selector:
     {{- if .Values.service.selector }}
     {{- toYaml .Values.service.selector | nindent 4 }}
     {{- else }}
     app.kubernetes.io/instance: {{ .Release.Name | quote }}
-    {{- if .Values.isClusterService }}
-    k8s-app: {{ template "k8s-gateway.k8sapplabel" . }}
-    {{- end }}
     app.kubernetes.io/name: {{ template "k8s-gateway.name" . }}
     {{- end }}
   {{- if .Values.service.clusterIP }}
@@ -54,10 +46,11 @@ spec:
   {{- end }}
   ports:
 {{ include "k8s-gateway.servicePorts" . | indent 2 -}}
-  type: {{ default "ClusterIP" .Values.service.type }}
+  type: {{ default "ClusterIP" .Values.serviceType }}
   {{- if .Values.service.ipFamilyPolicy }}
   ipFamilyPolicy: {{ .Values.service.ipFamilyPolicy }}
   {{- end }}
   {{- if .Values.service.trafficDistribution }}
   trafficDistribution: {{ .Values.service.trafficDistribution }}
   {{- end }}
+{{- end }}

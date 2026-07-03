@@ -1,0 +1,20 @@
+{{- if and .Values.deployment.enabled .Values.rbac.create }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ template "k8s-gateway.clusterRoleName" . }}
+  labels: {{- include "k8s-gateway.labels" . | nindent 4 }}
+{{- with .Values.customAnnotations }}
+  annotations:
+{{- toYaml . | nindent 4 }}
+{{- end }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ template "k8s-gateway.clusterRoleName" . }}
+subjects:
+- kind: ServiceAccount
+  name: {{ template "k8s-gateway.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}

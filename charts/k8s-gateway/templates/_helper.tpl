@@ -34,7 +34,8 @@ app.kubernetes.io/name: {{ template "k8s-gateway.name" . }}
 {{- end -}}
 
 {{/*
-Allow k8s-app label to be overridden
+Allow k8s-app label to be overridden.
+
 */}}
 {{- define "k8s-gateway.k8sapplabel" -}}
 {{- default .Chart.Name .Values.k8sAppLabelOverride | trunc 63 | trimSuffix "-" -}}
@@ -51,14 +52,12 @@ Generate the list of ports automatically from the server definitions
         {{/* Capture port to avoid scoping awkwardness */}}
         {{- $port := toString .port -}}
         {{- $serviceport := default .port .servicePort -}}
-
         {{/* If none of the server blocks has mentioned this port yet take note of it */}}
         {{- if not (hasKey $ports $port) -}}
             {{- $ports := set $ports $port (dict "istcp" false "isudp" false "serviceport" $serviceport) -}}
         {{- end -}}
         {{/* Retrieve the inner dict that holds the protocols for a given port */}}
         {{- $innerdict := index $ports $port -}}
-
         {{/*
         Look at each of the zones and check which protocol they serve
         At the moment the following are supported by k8s-gateway:
@@ -78,7 +77,6 @@ Generate the list of ports automatically from the server definitions
                 {{- $innerdict := set $innerdict "istcp" true -}}
             {{- end -}}
         {{- end -}}
-
         {{/* If none of the zones specify scheme, default to dns:// udp */}}
         {{- if and (not (index $innerdict "istcp")) (not (index $innerdict "isudp")) -}}
             {{- $innerdict := set $innerdict "isudp" true -}}
@@ -91,7 +89,6 @@ Generate the list of ports automatically from the server definitions
         {{/* Write the dict back into the outer dict */}}
         {{- $ports := set $ports $port $innerdict -}}
     {{- end -}}
-
     {{/* Write out the ports according to the info collected above */}}
     {{- range $port, $innerdict := $ports -}}
         {{- $portList := list -}}
@@ -101,12 +98,10 @@ Generate the list of ports automatically from the server definitions
         {{- if index $innerdict "istcp" -}}
             {{- $portList = append $portList (dict "port" (get $innerdict "serviceport") "protocol" "TCP" "name" (printf "tcp-%s" $port) "targetPort" ($port | int)) -}}
         {{- end -}}
-
         {{- range $portDict := $portList -}}
             {{- if index $innerdict "nodePort" -}}
                 {{- $portDict := set $portDict "nodePort" (get $innerdict "nodePort" | int) -}}
             {{- end -}}
-
             {{- printf "- %s\n" (toJson $portDict) -}}
         {{- end -}}
     {{- end -}}
@@ -122,14 +117,12 @@ Generate the list of ports automatically from the server definitions
     {{- range .Values.servers -}}
         {{/* Capture port to avoid scoping awkwardness */}}
         {{- $port := toString .port -}}
-
         {{/* If none of the server blocks has mentioned this port yet take note of it */}}
         {{- if not (hasKey $ports $port) -}}
             {{- $ports := set $ports $port (dict "istcp" false "isudp" false) -}}
         {{- end -}}
         {{/* Retrieve the inner dict that holds the protocols for a given port */}}
         {{- $innerdict := index $ports $port -}}
-
         {{/*
         Look at each of the zones and check which protocol they serve
         At the moment the following are supported by k8s-gateway:
@@ -144,24 +137,19 @@ Generate the list of ports automatically from the server definitions
                 {{- end }}
                 {{- $innerdict := set $innerdict "isudp" true -}}
             {{- end -}}
-
             {{- if has (default "" .scheme) (list "tls://" "grpc://" "https://") -}}
                 {{- $innerdict := set $innerdict "istcp" true -}}
             {{- end -}}
         {{- end -}}
-
         {{/* If none of the zones specify scheme, default to dns:// udp */}}
         {{- if and (not (index $innerdict "istcp")) (not (index $innerdict "isudp")) -}}
             {{- $innerdict := set $innerdict "isudp" true -}}
         {{- end -}}
-
         {{- if .hostPort -}}
             {{- $innerdict := set $innerdict "hostPort" .hostPort -}}
         {{- end -}}
-
         {{/* Write the dict back into the outer dict */}}
         {{- $ports := set $ports $port $innerdict -}}
-
         {{/* Fetch port from the configuration if the prometheus section exists */}}
         {{- range .plugins -}}
             {{- if eq .name "prometheus" -}}
@@ -172,7 +160,6 @@ Generate the list of ports automatically from the server definitions
             {{- end -}}
         {{- end -}}
     {{- end -}}
-
     {{/* Write out the ports according to the info collected above */}}
     {{- range $port, $innerdict := $ports -}}
         {{- $portList := list -}}
@@ -182,12 +169,10 @@ Generate the list of ports automatically from the server definitions
         {{- if index $innerdict "istcp" -}}
             {{- $portList = append $portList (dict "containerPort" ($port | int) "protocol" "TCP" "name" (printf "tcp-%s" $port)) -}}
         {{- end -}}
-
         {{- range $portDict := $portList -}}
             {{- if index $innerdict "hostPort" -}}
                 {{- $portDict := set $portDict "hostPort" (get $innerdict "hostPort" | int) -}}
             {{- end -}}
-
             {{- printf "- %s\n" (toJson $portDict) -}}
         {{- end -}}
     {{- end -}}
@@ -205,17 +190,11 @@ Create the name of the service account to use
 {{- end -}}
 
 {{/*
-Create the name of the service account to use
+Create the name of the ClusterRole to use.
 */}}
 {{- define "k8s-gateway.clusterRoleName" -}}
-{{- if and .Values.clusterRole .Values.clusterRole.nameOverride -}}
-    {{ .Values.clusterRole.nameOverride }}
-{{- else -}}
-    {{ template "k8s-gateway.fullname" . }}
+{{ template "k8s-gateway.fullname" . }}
 {{- end -}}
-{{- end -}}
-
-
 {{/*
 Returns "true" if any plugin declares the given resource name
 in either its in configBlock.
@@ -259,17 +238,24 @@ DNSEndpoint — matches "dnsendpoint" in configBlock
 {{- end -}}
 
 {{/*
-Gateway API — any of HTTPRoute, TLSRoute, GRPCRoute trigger this
+HTTPRoute — matches "HTTPRoute" in watchedResources
 */}}
-{{- define "k8s-gateway.gatewayAPI" -}}
-  {{- $root := . -}}
-  {{- $enabled := "false" -}}
-  {{- range list "HTTPRoute" "TLSRoute" "GRPCRoute" -}}
-    {{- if eq (include "k8s-gateway.hasResource" (list $root .)) "true" -}}
-      {{- $enabled = "true" -}}
-    {{- end -}}
-  {{- end -}}
-  {{- $enabled -}}
+{{- define "k8s-gateway.httpRoute" -}}
+  {{- include "k8s-gateway.hasResource" (list . "HTTPRoute") -}}
+{{- end -}}
+
+{{/*
+TLSRoute — matches "TLSRoute" in watchedResources
+*/}}
+{{- define "k8s-gateway.tlsRoute" -}}
+  {{- include "k8s-gateway.hasResource" (list . "TLSRoute") -}}
+{{- end -}}
+
+{{/*
+GRPCRoute — matches "GRPCRoute" in watchedResources
+*/}}
+{{- define "k8s-gateway.grpcRoute" -}}
+  {{- include "k8s-gateway.hasResource" (list . "GRPCRoute") -}}
 {{- end -}}
 
 {{/*
