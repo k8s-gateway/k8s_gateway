@@ -91,6 +91,8 @@ tests:
             apiGroups:
               - gateway.networking.k8s.io
             resources:
+              - gateways
+              - gatewayclasses
               - httproutes
               - tlsroutes
               - grpcroutes

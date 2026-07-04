@@ -42,6 +42,26 @@ podLabels: {}
 
 serviceType: "LoadBalancer"
 
+prometheus:
+  service:
+    enabled: false
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9153"
+    selector: {}
+  monitor:
+    enabled: false
+    additionalLabels: {}
+    namespace: ""
+    interval: ""
+    scrapeTimeout: ""
+    scheme: ""
+    honorLabels: false
+    tlsConfig: {}
+    relabelings: []
+    metricRelabelings: []
+    selector: {}
+
 service:
   # clusterIP: ""
   # clusterIPs: []
@@ -65,7 +85,7 @@ serviceAccount:
   name: ""
   annotations: {}
 
-# Optional priority class to be used for the coredns pods.
+# Optional priority class to be used for the coredns k8s gateway pods.
 priorityClassName: ""
 
 # Configure the pod level securityContext.
@@ -94,7 +114,7 @@ servers:
         lameduck 10s
     # Serves a /ready endpoint on :8181, required for readinessProbe
     - name: ready
-    # Required to query k8s_gateway API for data
+    # Required to query kubernetes API for data
     - name: k8s_gateway
       parameters: example.com
       configBlock: |-
@@ -102,6 +122,9 @@ servers:
         ttl 30
         resources Service HTTPRoute
         fallthrough in-addr.arpa ip6.arpa
+    # Serves a /metrics endpoint on :9153, required for serviceMonitor
+    - name: prometheus
+      parameters: 0.0.0.0:9153
     - name: forward
       parameters: . /etc/resolv.conf
     - name: cache
@@ -113,12 +136,12 @@ servers:
 # Complete example with all the options:
 # - zones:                 # the `zones` block can be left out entirely, defaults to "."
 #   - zone: hello.world.   # optional, defaults to "."
-#     scheme: tls://       # optional, defaults to "" (which equals "dns://" in CoreDNS)
+#     scheme: tls://       # optional, defaults to "" (which equals "dns://" in CoreDNS k8s gateway)
 #   - zone: foo.bar.
 #     scheme: dns://
 #     use_tcp: true        # set this parameter to optionally expose the port on tcp as well as udp for the DNS protocol
 #                          # Note that this will not work if you are also exposing tls or grpc on the same server
-#   port: 12345            # optional, defaults to "" (which equals 53 in CoreDNS)
+#   port: 12345            # optional, defaults to "" (which equals 53 in CoreDNS k8s gateway)
 #   plugins:               # the plugins to use for this server block
 #   - name: k8s_gateway     # name of plugin, if used multiple times ensure that the plugin supports it!
 #     parameters: foo bar  # list of parameters after the plugin
@@ -133,7 +156,7 @@ servers:
 #     parameters: /opt/coredns/*.conf
 extraConfig: {}
 
-# To use the livenessProbe, the health plugin needs to be enabled in CoreDNS' server config
+# To use the livenessProbe, the health plugin needs to be enabled in CoreDNS k8s gateway' server config
 livenessProbe:
   enabled: true
   initialDelaySeconds: 60
@@ -141,7 +164,7 @@ livenessProbe:
   timeoutSeconds: 5
   failureThreshold: 5
   successThreshold: 1
-# To use the readinessProbe, the ready plugin needs to be enabled in CoreDNS' server config
+# To use the readinessProbe, the ready plugin needs to be enabled in CoreDNS k8s gateway' server config
 readinessProbe:
   enabled: true
   initialDelaySeconds: 30
@@ -169,14 +192,14 @@ affinity: {}
 #   topologySpreadConstraints:
 #     - labelSelector:
 #         matchLabels:
-#           app.kubernetes.io/name: '{{ template "coredns.name" . }}'
+#           app.kubernetes.io/name: '{{ template "k8s-gateway.name" . }}'
 #           app.kubernetes.io/instance: '{{ .Release.Name }}'
 #       topologyKey: topology.kubernetes.io/zone
 #       maxSkew: 1
 #       whenUnsatisfiable: ScheduleAnyway
 #     - labelSelector:
 #         matchLabels:
-#           app.kubernetes.io/name: '{{ template "coredns.name" . }}'
+#           app.kubernetes.io/name: '{{ template "k8s-gateway.name" . }}'
 #           app.kubernetes.io/instance: '{{ .Release.Name }}'
 #       topologyKey: kubernetes.io/hostname
 #       maxSkew: 1
@@ -224,7 +247,7 @@ extraVolumeMounts: []
 # - name: some-volume-name
 #   mountPath: /etc/wherever
 
-# optional array of secrets to mount inside coredns container
+# optional array of secrets to mount inside coredns k8s gateway container
 # possible usecase: need for secure connection with etcd backend
 extraSecrets: []
 # - name: etcd-client-certs
@@ -234,7 +257,7 @@ extraSecrets: []
 #   mountPath: /etc/wherever
 #   defaultMode: 440
 
-# optional array of environment variables for coredns container
+# optional array of environment variables for coredns k8s gateway container
 # possible usecase: provides username and password for etcd user authentications
 env: []
 # - name: WHATEVER_ENV
@@ -245,21 +268,43 @@ env: []
 #       name: some-secret-name
 #       key: secret-key
 
-# To support legacy deployments using CoreDNS with the "k8s-app: kube-dns" label selectors.
-# See https://github.com/coredns/helm/blob/master/charts/coredns/README.md#adopting-existing-coredns-resources
-# k8sAppLabelOverride: "kube-dns"
-
 # Custom labels to apply to Deployment, Pod, Configmap, Service
 customLabels: {}
 
 # Custom annotations to apply to Deployment, Pod, Configmap, Service.
 customAnnotations: {}
 
+## Create HorizontalPodAutoscaler object.
+##
+# hpa:
+#   enabled: false
+#   minReplicas: 1
+#   maxReplicas: 10
+#   metrics:
+#    - type: Resource
+#      resource:
+#        name: memory
+#        target:
+#          type: Utilization
+#          averageUtilization: 60
+#    - type: Resource
+#      resource:
+#        name: cpu
+#        target:
+#          type: Utilization
+#          averageUtilization: 60
+
+hpa:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 2
+  metrics: []
+
 deployment:
   skipConfig: false
   enabled: true
   name: ""
-  ## Annotations for the coredns deployment
+  ## Annotations for the coredns k8s gateway deployment
   annotations: {}
   # dnsPolicy determines how DNS resolution is handled for the pod.
   # Options: Default, ClusterFirst, ClusterFirstWithHostNet, None
@@ -278,5 +323,5 @@ deployment:
   #         value: "2"
   dnsConfig: {}
 
-# Configures initcontainers for the coredns deployment.
+# Configures initcontainers for the coredns k8s gateway deployment.
 initContainers: []
