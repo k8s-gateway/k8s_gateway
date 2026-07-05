@@ -5,7 +5,7 @@ metadata:
   name: ingress-myservicea
   namespace: default
 spec:
-  ingressClassName: nginx
+  ingressClassName: cilium
   rules:
     - host: myservicea.foo.org
       http:
@@ -43,7 +43,7 @@ metadata:
   labels:
     k8s-gateway.dns/ignore: "true"
 spec:
-  ingressClassName: nginx
+  ingressClassName: cilium
   rules:
     - host: ignored.foo.org
       http:

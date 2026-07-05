@@ -11,14 +11,14 @@ This plugin relies on its own connection to the k8s API server and doesn't share
 | Kind | Matching Against | External IPs are from |
 | ---- | ---------------- | -------- |
 | HTTPRoute<sup>[1](#foot1)</sup> | all FQDNs from `spec.hostnames` matching configured zones | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
-| TLSRoute<sup>[1](#foot1) | all FQDNs from `spec.hostnames` matching configured zones | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
-| GRPCRoute<sup>[1](#foot1) | all FQDNs from `spec.hostnames` matching configured zones | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
+| TLSRoute<sup>[1](#foot1)</sup> | all FQDNs from `spec.hostnames` matching configured zones | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
+| GRPCRoute<sup>[1](#foot1)</sup> | all FQDNs from `spec.hostnames` matching configured zones | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
 | Ingress | all FQDNs from `spec.rules[*].host` matching configured zones | `.status.loadBalancer.ingress` |
 | Service<sup>[3](#foot3)</sup> | `name.namespace` + any of the configured zones OR any string consisting of lower case alphanumeric characters, '-' or '.', specified in the `coredns.io/hostname` or `external-dns.alpha.kubernetes.io/hostname` annotations (see [this](https://github.com/k8s-gateway/k8s_gateway/blob/master/test/single-stack/service-annotation.yml#L8) for an example) | `.status.loadBalancer.ingress` |
-| DNSEndpoint<sup>[4](#foot4)</sup> | `spec.endpoints[*].targets` | |
+| DNSEndpoint<sup>[4](#foot4)</sup> | `spec.endpoints[*].dnsName` | `spec.endpoints[*].targets` |
 
 
-<a name="f1">1</a>: Currently supported version of GatewayAPI CRDs is v1.0.0+ experimental channel.</br>
+<a name="f1">1</a>: Requires GatewayAPI CRDs v1.1.0+ (experimental channel). TLSRoute and GRPCRoute need the `v1` API version.</br>
 <a name="f2">2</a>: Gateway is a separate resource specified in the `spec.parentRefs` of HTTPRoute|TLSRoute|GRPCRoute.</br>
 <a name="f3">3</a>: Only resolves service of type LoadBalancer</br>
 <a name="f4">4</a>: Requires external-dns CRDs</br>
@@ -29,12 +29,14 @@ This plugin is **NOT** supposed to be used for intra-cluster DNS resolution and 
 
 ## Install
 
-The recommended installation method is using the helm chart provided in the repo:
+The recommended installation method is using the Helm chart provided in the repo:
 
 ```
-helm repo add k8s_gateway https://k8s-gateway.github.io/k8s_gateway/
-helm install exdns --set domain=foo k8s_gateway/k8s-gateway
+helm repo add k8s-gateway https://k8s-gateway.github.io/charts
+helm install k8s-gateway k8s-gateway/k8s-gateway
 ```
+
+The chart uses a CoreDNS-style server/plugin configuration. See the [chart documentation](charts/k8s-gateway/README.md) for full configuration options, including multi-protocol support (DNS, DoT, DoH, gRPC), HPA, ServiceMonitor, and PodDisruptionBudget.
 
 Alternatively, for labbing and testing purposes `k8s_gateway` can be deployed with a single manifest:
 
@@ -126,12 +128,16 @@ To monitor any of the resources `k8s_gateway` requires the following permissions
     - list
     - watch
   ```
-* **HTTPRoute, TLSRoute, GRPCRoute**
+* **HTTPRoute, TLSRoute, GRPCRoute** (each is only included when configured in the plugin's `resources` directive)
   ```yaml
   - apiGroups:
     - gateway.networking.k8s.io
     resources:
-    - "*"
+    - gateways
+    - gatewayclasses
+    - httproutes
+    - tlsroutes
+    - grpcroutes
     verbs:
     - watch
     - list
@@ -152,6 +158,16 @@ To monitor any of the resources `k8s_gateway` requires the following permissions
       - dnsendpoints/status
     verbs:
       - "*"
+  ```
+* **Node**
+  ```yaml
+  - apiGroups:
+    - ""
+    resources:
+    - nodes
+    verbs:
+    - list
+    - watch
   ```
 
 ## Excluding Specific Resources
@@ -271,6 +287,9 @@ kubectl apply -f ./test/single-stack/ingress-services.yml
 
 # gateway API resources
 kubectl apply -f ./test/gateway-api/resources.yml
+
+# DNSEndpoint resources
+kubectl apply -f ./test/dnsendpoint.yaml
 ```
 
 Test queries can be sent to the exposed CoreDNS service like this:
@@ -296,6 +315,18 @@ $ dig @$ip -p 32553 myserviceb.gw.foo.org +short
 $ dig @$ip -p 32553 myserviced.gw.foo.org +short
 198.51.100.5
 198.51.100.4
+
+# TLSRoute
+$ dig @$ip -p 32553 myservicetls.gw.foo.org +short
+198.51.100.4
+
+# GRPCRoute
+$ dig @$ip -p 32553 myservicegrpc.gw.foo.org +short
+198.51.100.4
+
+# DNSEndpoint (requires zone suffix)
+$ dig @$ip -p 32553 test2.example.dev.foo.org +short
+192.168.30.1
 ```
 
 To cleanup local environment do:
