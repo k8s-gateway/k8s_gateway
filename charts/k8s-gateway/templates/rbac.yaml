@@ -29,6 +29,13 @@ rules:
   verbs:
   - list
   - watch
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - list
+  - watch
   {{- end }}
   {{- if eq (include "k8s-gateway.ingress" .) "true" }}
 - apiGroups:

@@ -2,7 +2,7 @@ apiVersion: v2
 name: k8s-gateway
 description: A Helm chart for the k8s_gateway CoreDNS plugin
 type: application
-version: 3.7.1
+version: 3.7.2
 appVersion: 1.8.0
 home: https://github.com/k8s-gateway/k8s_gateway
 sources:
@@ -12,5 +12,5 @@ maintainers:
     name: samip5
 annotations:
   artifacthub.io/changes: |
-    - kind: changed
-      description: bump app version to 1.8.0
+    - kind: added
+      description: RBAC permission to list/watch discovery.k8s.io/endpointslices for opt-in endpoint resolution
