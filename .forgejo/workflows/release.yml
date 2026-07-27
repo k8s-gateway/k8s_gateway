@@ -1,0 +1,36 @@
+name: Go Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  go-release:
+    runs-on: docker
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout
+        uses: https://code.forgejo.org/actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Go
+        uses: https://github.com/actions/setup-go@v6
+        with:
+          go-version: 1.26.x
+          check-latest: true
+      - name: Run GoReleaser
+        uses: https://github.com/goreleaser/goreleaser-action@v7
+        with:
+          version: latest
+          args: release
+        env:
+          # Forgejo Actions, like GitHub Actions, always exposes a GITHUB_TOKEN
+          # in the job environment, so goreleaser would otherwise see two SCM
+          # tokens at once and refuse to guess. GORELEASER_FORCE_TOKEN pins it
+          # to gitea; combined with gitea_urls in .goreleaser.yml this publishes
+          # a Forgejo/Codeberg release instead of a GitHub one.
+          GORELEASER_FORCE_TOKEN: gitea
+          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}

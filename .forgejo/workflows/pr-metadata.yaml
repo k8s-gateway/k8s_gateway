@@ -16,15 +16,14 @@ on:
 jobs:
   pr-metadata:
     name: Collect PR metadata
-    #runs-on: ["self-hosted", "X64"]
-    runs-on: ["ubuntu-latest"]
+    runs-on: docker
     outputs:
       isRenovatePR: ${{ startsWith(steps.branch-name.outputs.current_branch, 'renovate/') }}
       isFork: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
     steps:
       - name: Get branch name
         id: branch-name
-        uses: tj-actions/branch-names@v9.0.2
+        uses: https://github.com/tj-actions/branch-names@v9.0.2
 
       - name: Save PR data to file
         env:
@@ -33,7 +32,7 @@ jobs:
           echo $PR_NUMBER > pr_number.txt
 
       - name: Store pr data in artifact
-        uses: actions/upload-artifact@v7
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: pr_metadata
           path: ./pr_number.txt
@@ -41,19 +40,17 @@ jobs:
 
   pr-changes:
     name: Collect PR changes
-    #runs-on: ["self-hosted", "X64"]
-    runs-on: ["ubuntu-latest"]
+    runs-on: docker
     outputs:
       changed-files: ${{ steps.changed-files.outputs.changed_files }}
-      # changed-charts: ${{ steps.changed-charts.outputs.charts }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: https://code.forgejo.org/actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Get Changed Files
         id: changed-files
-        uses: bjw-s-labs/action-changed-files@a9a36fb08ce06db9b02fbd8026cc2c0945eb9841 # v0.6.0
+        uses: https://github.com/bjw-s-labs/action-changed-files@a9a36fb08ce06db9b02fbd8026cc2c0945eb9841 # v0.6.0
         with:
           patterns: charts/**

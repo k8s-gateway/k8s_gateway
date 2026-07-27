@@ -14,32 +14,32 @@ jobs:
   # Linting is in a separate job because golangci-lint is quite slow when
   # running it in cold-start mode.
   lint:
-    runs-on: ubuntu-latest
+    runs-on: docker
     steps:
-      - uses: actions/setup-go@v6
+      - uses: https://github.com/actions/setup-go@v6
         with:
           go-version: stable
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: https://code.forgejo.org/actions/checkout@v4
         with:
           fetch-depth: 0
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v9
+        uses: https://github.com/golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
           args: --timeout=5m0s
 
   unit-test:
-    runs-on: ubuntu-latest
+    runs-on: docker
     steps:
-      - uses: actions/setup-go@v6
+      - uses: https://github.com/actions/setup-go@v6
         with:
           go-version: stable
-      - uses: actions/checkout@v7
+      - uses: https://code.forgejo.org/actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Cache Go modules
-        uses: actions/cache@v6
+        uses: https://code.forgejo.org/actions/cache@v4
         with:
           path: ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
@@ -52,7 +52,7 @@ jobs:
       - name: Run tests with coverage
         run: go test -race -coverprofile=coverage.out ./...
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v7
+        uses: https://github.com/codecov/codecov-action@v7
         with:
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}

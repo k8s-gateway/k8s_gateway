@@ -26,32 +26,32 @@ jobs:
       matrix:
         include:
           - platform: amd64
-            runner: ubuntu-24.04
+            runner: docker
           - platform: arm64
-            runner: ubuntu-24.04-arm
+            runner: docker-arm64
     outputs:
       amd64: ${{ steps.digest.outputs.amd64 }}
       arm64: ${{ steps.digest.outputs.arm64 }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: https://code.forgejo.org/actions/checkout@v4
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+      - name: Login to Codeberg Container Registry
+        uses: https://github.com/docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
-          registry: ghcr.io
+          registry: codeberg.org
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: https://github.com/docker/setup-buildx-action@v4
 
       - name: Build Meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        uses: https://github.com/docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta
         env:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
-          images: ghcr.io/k8s-gateway/k8s_gateway
+          images: codeberg.org/${{ github.repository }}
           tags: |
             type=ref,event=branch,suffix=-${{ matrix.platform }}
             type=ref,event=pr,suffix=-${{ matrix.platform }}
@@ -62,13 +62,13 @@ jobs:
         id: build-type
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
-            echo "type=type=image,name=ghcr.io/${{ github.repository_owner }}/k8s_gateway,push-by-digest=true,name-canonical=true,push=true" >> $GITHUB_OUTPUT
+            echo "type=type=image,name=codeberg.org/${{ github.repository_owner }}/k8s_gateway,push-by-digest=true,name-canonical=true,push=true" >> $GITHUB_OUTPUT
           else
             echo "type=type=docker" >> $GITHUB_OUTPUT
           fi
 
       - name: Build Image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: https://github.com/docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         id: build
         with:
           build-args: |
@@ -78,7 +78,7 @@ jobs:
             TARGETPLATFORM=${{ matrix.platform }}
           labels: |
             org.opencontainers.image.title=k8s_gateway
-            org.opencontainers.image.url=https://ghcr.io/${{ github.repository_owner }}/k8s_gateway
+            org.opencontainers.image.url=https://codeberg.org/${{ github.repository_owner }}/k8s_gateway
             org.opencontainers.image.version=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.vendor=${{ github.repository_owner }}
@@ -96,25 +96,25 @@ jobs:
     if: ${{ github.event_name == 'release' }}
     needs: build
     name: Release
-    runs-on: ubuntu-24.04
+    runs-on: docker
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: https://code.forgejo.org/actions/checkout@v4
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+      - name: Login to Codeberg Container Registry
+        uses: https://github.com/docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
-          registry: ghcr.io
+          registry: codeberg.org
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
 
       - name: Build Meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        uses: https://github.com/docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta
         env:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
-          images: ghcr.io/k8s-gateway/k8s_gateway
+          images: codeberg.org/${{ github.repository }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -123,10 +123,10 @@ jobs:
 
       - name: Push Images
         id: push
-        uses: Noelware/docker-manifest-action@v1
+        uses: https://github.com/Noelware/docker-manifest-action@v1
         with:
           tags: ${{ join(fromJSON(steps.meta.outputs.json).tags, ',') }}
           inputs: >-
-            ghcr.io/${{ github.repository_owner }}/k8s_gateway@${{ needs.build.outputs.arm64 }},
-            ghcr.io/${{ github.repository_owner }}/k8s_gateway@${{ needs.build.outputs.amd64 }}
+            codeberg.org/${{ github.repository_owner }}/k8s_gateway@${{ needs.build.outputs.arm64 }},
+            codeberg.org/${{ github.repository_owner }}/k8s_gateway@${{ needs.build.outputs.amd64 }}
           push: false

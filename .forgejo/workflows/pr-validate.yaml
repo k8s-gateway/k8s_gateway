@@ -10,17 +10,17 @@ concurrency:
 
 jobs:
   pr-metadata:
-    uses: ./.github/workflows/pr-metadata.yaml
+    uses: ./.forgejo/workflows/pr-metadata.yaml
 
   pre-commit-check:
-    uses: ./.github/workflows/pre-commit-check.yaml
+    uses: ./.forgejo/workflows/pre-commit-check.yaml
     needs:
       - pr-metadata
     with:
       modifiedFiles: ${{ needs.pr-metadata.outputs.changedFiles }}
 
   charts-lint:
-    uses: ./.github/workflows/charts-lint.yaml
+    uses: ./.forgejo/workflows/charts-lint.yaml
     if: contains(needs.pr-metadata.outputs.changedFiles, 'charts/')
     needs:
       - pr-metadata
@@ -30,7 +30,7 @@ jobs:
       isRenovatePR: ${{ needs.pr-metadata.outputs.isRenovatePR }}
 
   charts-test:
-    uses: ./.github/workflows/charts-test.yaml
+    uses: ./.forgejo/workflows/charts-test.yaml
     if: contains(needs.pr-metadata.outputs.changedFiles, 'charts/')
     needs:
       - pr-metadata

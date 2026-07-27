@@ -24,8 +24,7 @@ env:
 jobs:
   install-chart:
     name: Install chart
-    #runs-on: ["self-hosted", "X64"]
-    runs-on: ubuntu-latest
+    runs-on: docker
     if: ${{ inputs.chartsToTest != '[]' && inputs.chartsToTest != '' }}
     strategy:
       matrix:
@@ -34,13 +33,13 @@ jobs:
       fail-fast: false
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: https://code.forgejo.org/actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ inputs.checkoutCommit }}
 
       - name: Install Kubernetes tools
-        uses: yokawasa/action-setup-kube-tools@v0.14.0
+        uses: https://github.com/yokawasa/action-setup-kube-tools@v0.14.0
         with:
           setup-tools: |
             helmv3
@@ -48,12 +47,12 @@ jobs:
           helm: "${{ env.HELM_VERSION }}"
           kubectl: "${{ matrix.k8s_version }}"
 
-      - uses: actions/setup-python@v6
+      - uses: https://github.com/actions/setup-python@v6
         with:
           python-version: "3.14"
 
       - name: Set up chart-testing
-        uses: helm/chart-testing-action@v2.8.0
+        uses: https://github.com/helm/chart-testing-action@v2.8.0
 
       - name: Debug
         run: |
@@ -61,7 +60,7 @@ jobs:
           env
 
       - name: Create k3d cluster
-        uses: nolar/setup-k3d-k3s@v1
+        uses: https://github.com/nolar/setup-k3d-k3s@v1
         with:
           version: ${{ matrix.k8s_version }}
 
@@ -79,8 +78,7 @@ jobs:
     if: |
       always()
     name: Install successful
-    #runs-on: ["self-hosted", "X64"]
-    runs-on: ubuntu-latest
+    runs-on: docker
     steps:
       - name: Check install matrix status
         if: ${{ (inputs.chartsToTest != '[]' && inputs.chartsToTest != '') && needs.install-chart.result != 'success' }}
@@ -88,8 +86,7 @@ jobs:
 
   unittest-chart:
     name: Unit-test chart
-    #runs-on: ["self-hosted", "X64"]
-    runs-on: ubuntu-latest
+    runs-on: docker
     if: ${{ inputs.chartsToTest != '[]' && inputs.chartsToTest != '' }}
     strategy:
       matrix:
@@ -97,13 +94,13 @@ jobs:
       fail-fast: false
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: https://code.forgejo.org/actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ inputs.checkoutCommit }}
 
       - name: Install Kubernetes tools
-        uses: yokawasa/action-setup-kube-tools@v0.14.0
+        uses: https://github.com/yokawasa/action-setup-kube-tools@v0.14.0
         with:
           setup-tools: |
             helmv3
@@ -122,8 +119,7 @@ jobs:
     if: |
       always()
     name: Unittest successful
-    #runs-on: ["self-hosted", "X64"]
-    runs-on: ubuntu-latest
+    runs-on: docker
     steps:
       - name: Check unittest matrix status
         if: ${{ (inputs.chartsToTest != '[]' && inputs.chartsToTest != '') && needs.unittest-chart.result != 'success' }}

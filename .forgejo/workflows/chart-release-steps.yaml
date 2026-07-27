@@ -1,4 +1,23 @@
----
+# Adapted from the GitHub version:
+#  - GitHub Pages (artifact upload + actions/deploy-pages) replaced with a
+#    plain push to a "pages" branch, which is how Codeberg Pages serves
+#    project sites directly from git — BUT Codeberg also requires a one-time
+#    manual webhook (repo Settings > Webhooks, type "Forgejo", branch filter
+#    "pages") pointing at the Codeberg Pages server before pushes to that
+#    branch actually trigger a (re)deploy. Pushing alone does not do it.
+#  - GitHub Releases (EndBug/latest-tag + ncipollo/release-action) replaced
+#    with a plain git tag push + code.forgejo.org's forgejo-release action
+#    (inputs verified against its action.yml as of this writing).
+#  - OIDC uses Forgejo's own `enable-openid-connect: true` (not GitHub's
+#    `permissions: id-token: write`, which Forgejo does not honor for this
+#    purpose) and the issuer is `<instance>/api/actions` per Forgejo's OIDC
+#    docs. Whether Codeberg's OIDC issuer is trusted by the public-good
+#    Sigstore Fulcio/Rekor instances is still unverified — test this
+#    end-to-end before depending on it, or switch to key-based cosign signing.
+#  - Registry auth uses a dedicated REGISTRY_TOKEN secret: the automatic
+#    per-job token does not carry package read/write scope. Create a PAT
+#    with repository+package read/write and store it as an Actions secret.
+enable-openid-connect: true
 name: "Release chart (Reusable)"
 
 on:
@@ -9,21 +28,15 @@ on:
           Json encoded list of Helm charts to release. Defaults to releasing everything.
         required: true
         type: string
-      createGithubRelease:
+      createRelease:
         description: >
-          Should the chart be published as a GitHub release
+          Should the chart be published as a Forgejo/Codeberg release
         default: false
         required: false
         type: boolean
-      publishToGhPages:
+      publishToPages:
         description: >
-          Should the charts be published to GitHub Pages.
-        default: false
-        required: false
-        type: boolean
-      deployGhPages:
-        description: >
-          Should the GitHub pages repo be deployed.
+          Should the charts be published to Codeberg Pages.
         default: false
         required: false
         type: boolean
@@ -40,44 +53,32 @@ permissions:
 jobs:
   release-chart:
     name: Release chart
-    runs-on: ubuntu-24.04
-
-#    environment:
-#      name: github-pages
-#      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: docker
 
     permissions:
-      pages: write
-      id-token: write
       contents: write
       packages: write
 
     steps:
-      # ----------------------------
-      # Setup
-      # ----------------------------
       - name: Checkout source branch
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: https://code.forgejo.org/actions/checkout@v4
         with:
           path: src
 
       - name: Install Mise and required tools
-        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        uses: https://github.com/jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
 
       - name: Login to OCI Registry
         if: ${{ inputs.publishToOciRegistry }}
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        uses: https://github.com/docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
-          registry: ghcr.io
+          registry: codeberg.org
           username: ${{ github.actor }}
-          password: ${{ github.token }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
 
-      # ----------------------------
-      # Collect chart metadata
-      # ----------------------------
       - name: Get chart details
         id: chart-details
-        uses: bjw-s-labs/helm-charts-actions/get-chart-details@4f48dbc7967b9c73c1a1f72db82de8de9274a626
+        uses: https://github.com/bjw-s-labs/helm-charts-actions/get-chart-details@4f48dbc7967b9c73c1a1f72db82de8de9274a626
         with:
           path: src/charts/${{ inputs.chart }}
           validateChartYaml: true
@@ -94,7 +95,7 @@ jobs:
 
       - name: Format changelog
         id: format-changelog
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        uses: https://github.com/actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           INPUTS_CHANGES: ${{ steps.chart-details.outputs.changes }}
         with:
@@ -124,11 +125,8 @@ jobs:
             }
             core.setOutput('changelog', changelog);
 
-      # ----------------------------
-      # Package Helm chart
-      # ----------------------------
       - name: Dereference JSON schema before packaging
-        uses: bjw-s-labs/helm-charts-actions/dereference-json-schema@4f48dbc7967b9c73c1a1f72db82de8de9274a626
+        uses: https://github.com/bjw-s-labs/helm-charts-actions/dereference-json-schema@4f48dbc7967b9c73c1a1f72db82de8de9274a626
         with:
           schemaFile: "src/charts/${{ inputs.chart }}/values.schema.json"
           outputFile: "src/charts/${{ inputs.chart }}/values.schema.json"
@@ -145,19 +143,16 @@ jobs:
           helm package "${CHART_DIR}" --dependency-update --destination "${TARGET_DIR}"
           echo "result=$(ls ${TARGET_DIR}/*.tgz)" >> "$GITHUB_OUTPUT"
 
-      # ----------------------------
-      # Add chart to GitHub Pages
-      # ----------------------------
-      - name: Checkout gh-pages branch
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        if: ${{ inputs.publishToGhPages }}
+      - name: Checkout pages branch
+        uses: https://code.forgejo.org/actions/checkout@v4
+        if: ${{ inputs.publishToPages }}
         with:
-          path: gh-pages
-          ref: gh-pages
+          path: pages
+          ref: pages
 
-      - name: Copy package to gh-pages structure
+      - name: Copy package to pages structure
         id: copy-package
-        if: ${{ inputs.publishToGhPages }}
+        if: ${{ inputs.publishToPages }}
         shell: bash
         env:
           CHART_DIR: "${{ inputs.chart }}"
@@ -165,65 +160,58 @@ jobs:
           PACKAGE_FILE: ${{ steps.package-chart.outputs.result }}
         run: |
           TARGET_DIR=$(dirname ${CHART_DIR})
-          cp "${PACKAGE_FILE}" "gh-pages/${CHART_FOLDER}/"
+          cp "${PACKAGE_FILE}" "pages/${CHART_FOLDER}/"
 
       - name: Update repository
-        if: ${{ inputs.publishToGhPages }}
+        if: ${{ inputs.publishToPages }}
         shell: bash
-        working-directory: gh-pages
+        working-directory: pages
         run: |
           git pull
 
       - name: Update Helm chart index
-        if: ${{ inputs.publishToGhPages }}
+        if: ${{ inputs.publishToPages }}
         shell: bash
-        working-directory: gh-pages
+        working-directory: pages
         run: |
-          helm repo index . --url https://k8s-gateway.github.io/k8s_gateway
+          helm repo index . --url https://k8s-gateway.codeberg.page/k8s_gateway
 
-      - name: Commit Changes
-        if: ${{ inputs.publishToGhPages }}
-        uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7.2.0
+      - name: Commit and push changes
+        if: ${{ inputs.publishToPages }}
+        uses: https://github.com/stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7.2.0
         with:
           commit_message: "feat: Add Chart package ${{ steps.chart-details.outputs.name }}-${{ steps.chart-details.outputs.version }}"
-          repository: gh-pages
-          branch: gh-pages
+          repository: pages
+          branch: pages
           file_pattern: "index.yaml *.tgz"
-          commit_user_name: github-actions[bot]
-          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
-          commit_author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          commit_user_name: forgejo-actions
+          commit_user_email: forgejo-actions@noreply.codeberg.org
+          commit_author: forgejo-actions <forgejo-actions@noreply.codeberg.org>
 
-      - name: Deploy changes to GitHub Pages
-        id: deployment
-        if: ${{ inputs.publishToGhPages && inputs.deployGhPages }}
-        uses: ./src/.github/actions/publish-folder-to-pages
-        with:
-          path: gh-pages/
-          deleteArtifactAfterPublish: true
-
-      # ----------------------------
-      # Create GitHub release
-      # ----------------------------
       - name: Create tag
-        if: ${{ inputs.createGithubRelease }}
-        uses: EndBug/latest-tag@8fcae8848c1e23fd8212258f69a9619bc62cad67 # latest
-        with:
-          ref: ${{ steps.chart-details.outputs.name }}-${{ steps.chart-details.outputs.version }}
-          git-directory: src
+        if: ${{ inputs.createRelease }}
+        shell: bash
+        working-directory: src
+        run: |
+          TAG="${{ steps.chart-details.outputs.name }}-${{ steps.chart-details.outputs.version }}"
+          git tag -f "$TAG"
+          git push origin "$TAG" -f
 
       - name: Create release for tag
-        uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1.21.0
-        if: ${{ inputs.createGithubRelease }}
+        uses: https://code.forgejo.org/actions/forgejo-release@v2
+        if: ${{ inputs.createRelease }}
         with:
-          allowUpdates: true
-          makeLatest: 'false'
+          direction: upload
+          url: https://codeberg.org
+          repo: ${{ github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ steps.chart-details.outputs.name }}-${{ steps.chart-details.outputs.version }}
-          body: ${{ steps.format-changelog.outputs.changelog }}
-
+          release-notes: ${{ steps.format-changelog.outputs.changelog }}
+          hide-archive-link: true
 
       - name: Install Cosign
         if: ${{ inputs.publishToOciRegistry }}
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        uses: https://github.com/sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v2.6.1
 
@@ -234,7 +222,7 @@ jobs:
           PACKAGE_FILE: ${{ steps.package-chart.outputs.result }}
           CHART_NAME: ${{ steps.chart-details.outputs.name }}
           CHART_VERSION: ${{ steps.chart-details.outputs.version }}
-          CHART_TAG_BASE: ghcr.io/k8s-gateway/charts
+          CHART_TAG_BASE: codeberg.org/k8s-gateway/charts
           CHART_TAG: ${{ steps.chart-details.outputs.name }}:${{ steps.chart-details.outputs.version }}
           GITHUB_REF: ${{ github.ref }}
         run: |-
@@ -243,5 +231,5 @@ jobs:
           CHART_DIGEST=$(awk '/Digest: /{print $2}' push-metadata.txt)
           cosign sign --yes "${CHART_TAG_BASE}/${CHART_TAG}@${CHART_DIGEST}"
           cosign verify "${CHART_TAG_BASE}/${CHART_TAG}@${CHART_DIGEST}" \
-            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-            --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/chart-release-steps.yaml@${GITHUB_REF}"
+            --certificate-oidc-issuer "https://codeberg.org/api/actions" \
+            --certificate-identity "https://codeberg.org/${{ github.repository }}/.forgejo/workflows/chart-release-steps.yaml@${GITHUB_REF}"

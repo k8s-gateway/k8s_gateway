@@ -1,3 +1,8 @@
+gitea_urls:
+  api: https://codeberg.org/api/v1/
+  download: https://codeberg.org
+  skip_tls_verify: false
+
 before:
   hooks:
     - go mod download

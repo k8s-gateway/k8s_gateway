@@ -28,36 +28,36 @@ jobs:
       matrix:
         chart: ${{ fromJSON(inputs.chartsToLint) }}
       fail-fast: false
-    runs-on: ubuntu-latest
+    runs-on: docker
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: https://code.forgejo.org/actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ inputs.checkoutCommit }}
 
       - name: Verify chart version
-        uses: bjw-s/helm-charts-actions/verify-chart-version@2025.2.0
+        uses: https://github.com/bjw-s/helm-charts-actions/verify-chart-version@2025.2.0
         id: verify-chart-version
         with:
           chart: "${{ matrix.chart }}"
 
       - name: Verify chart changelog
-        uses: bjw-s/helm-charts-actions/verify-chart-changelog@2025.2.0
+        uses: https://github.com/bjw-s/helm-charts-actions/verify-chart-changelog@2025.2.0
         if: inputs.isRenovatePR != 'true'
         id: verify-chart-changelog
         with:
           chart: "${{ matrix.chart }}"
 
       - name: Install Kubernetes tools
-        uses: yokawasa/action-setup-kube-tools@v0.14.0
+        uses: https://github.com/yokawasa/action-setup-kube-tools@v0.14.0
         with:
           setup-tools: |
             helmv3
           helm: "${{ env.HELM_VERSION }}"
 
       - name: Set up chart-testing
-        uses: helm/chart-testing-action@v2.8.0
+        uses: https://github.com/helm/chart-testing-action@v2.8.0
 
       - name: Run chart-testing (install)
         run: ct lint --config .ci/ct.yaml --charts "${{ matrix.chart }}"
@@ -69,7 +69,7 @@ jobs:
     if: |
       always()
     name: Lint successful
-    runs-on: ubuntu-latest
+    runs-on: docker
     steps:
       - name: Check lint matrix status
         if: ${{ (inputs.chartsToLint != '' && inputs.chartsToLint != '[]') && (needs.lint-chart.result != 'success') }}
