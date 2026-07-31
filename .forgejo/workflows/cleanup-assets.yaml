@@ -7,12 +7,14 @@ on:
     inputs:
       keep_days:
         description: "Delete artifacts older than this many days (0 = delete all)"
+        type: number
         required: false
-        default: "7"
+        default: 7
       dry_run:
-        description: "Only list what would be deleted (true/false)"
+        description: "Only list what would be deleted"
+        type: boolean
         required: false
-        default: "false"
+        default: false
 
 permissions:
   actions: write
@@ -32,7 +34,9 @@ jobs:
           node - <<'EOF'
           const api = process.env.FORGEJO_API;
           const repo = process.env.REPO;
-          const keepDays = Number(process.env.KEEP_DAYS);
+          // Empty/garbage KEEP_DAYS must not coerce to 0 (0 = delete everything)
+          const rawKeepDays = process.env.KEEP_DAYS?.trim();
+          const keepDays = rawKeepDays && !isNaN(Number(rawKeepDays)) ? Number(rawKeepDays) : 7;
           const dryRun = process.env.DRY_RUN === "true";
           const cutoff = Date.now() - keepDays * 24 * 60 * 60 * 1000;
           const headers = { Authorization: `token ${process.env.TOKEN}` };
