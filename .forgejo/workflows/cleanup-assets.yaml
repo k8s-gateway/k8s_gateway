@@ -1,0 +1,97 @@
+name: Cleanup Actions artifacts
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      keep_days:
+        description: "Delete artifacts older than this many days (0 = delete all)"
+        required: false
+        default: "7"
+      dry_run:
+        description: "Only list what would be deleted (true/false)"
+        required: false
+        default: "false"
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup-artifacts:
+    runs-on: docker
+    steps:
+      - name: Delete old Actions artifacts
+        env:
+          FORGEJO_API: ${{ github.server_url }}/api/v1
+          REPO: ${{ github.repository }}
+          TOKEN: ${{ secrets.CLEANUP_TOKEN || github.token }}
+          KEEP_DAYS: ${{ github.event.inputs.keep_days || '7' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          node - <<'EOF'
+          const api = process.env.FORGEJO_API;
+          const repo = process.env.REPO;
+          const keepDays = Number(process.env.KEEP_DAYS);
+          const dryRun = process.env.DRY_RUN === "true";
+          const cutoff = Date.now() - keepDays * 24 * 60 * 60 * 1000;
+          const headers = { Authorization: `token ${process.env.TOKEN}` };
+
+          const fmtMiB = (bytes) => (bytes / 1024 / 1024).toFixed(2) + " MiB";
+
+          async function listAllArtifacts() {
+            const all = [];
+            for (let page = 1; ; page++) {
+              const res = await fetch(
+                `${api}/repos/${repo}/actions/artifacts?page=${page}&limit=50`,
+                { headers },
+              );
+              if (!res.ok) {
+                throw new Error(`Listing artifacts failed: ${res.status} ${await res.text()}`);
+              }
+              // Forgejo returns a bare array; GitHub-style APIs wrap it in {artifacts}
+              const body = await res.json();
+              const artifacts = Array.isArray(body) ? body : body.artifacts || [];
+              all.push(...artifacts);
+              if (artifacts.length < 50) return all;
+            }
+          }
+
+          const artifacts = await listAllArtifacts();
+          const total = artifacts.reduce((sum, a) => sum + (a.size_in_bytes || 0), 0);
+          console.log(`Found ${artifacts.length} artifacts, ${fmtMiB(total)} total`);
+
+          const stale = artifacts.filter(
+            (a) => a.expired || new Date(a.created_at).getTime() < cutoff,
+          );
+
+          let freed = 0;
+          let failures = 0;
+          for (const a of stale) {
+            const label = `#${a.id} ${a.name} (${fmtMiB(a.size_in_bytes || 0)}, created ${a.created_at})`;
+            if (dryRun) {
+              console.log(`[dry-run] would delete ${label}`);
+              freed += a.size_in_bytes || 0;
+              continue;
+            }
+            const res = await fetch(
+              `${api}/repos/${repo}/actions/artifacts/${a.id}`,
+              { method: "DELETE", headers },
+            );
+            if (res.ok || res.status === 404) {
+              console.log(`Deleted ${label}`);
+              freed += a.size_in_bytes || 0;
+            } else {
+              failures++;
+              console.error(`Failed to delete ${label}: ${res.status} ${await res.text()}`);
+            }
+          }
+
+          console.log(
+            `${dryRun ? "Would free" : "Freed"} ${fmtMiB(freed)} ` +
+            `(${stale.length} of ${artifacts.length} artifacts older than ${keepDays} days or expired)`,
+          );
+          if (failures > 0) {
+            throw new Error(`${failures} deletions failed`);
+          }
+          EOF
