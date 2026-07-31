@@ -16,9 +16,6 @@ on:
     paths:
       - "charts/*"
 
-permissions:
-  contents: read
-
 jobs:
   prepare:
     name: Prepare data required for workflow
@@ -144,9 +141,6 @@ jobs:
         chart: ${{ fromJSON(needs.prepare.outputs.otherChartsToRelease) }}
       fail-fast: false
       max-parallel: 1
-    permissions:
-      contents: write
-      packages: write
     # Grants the invoked reusable workflow's jobs OIDC token issuance
     # (Forgejo's equivalent of GitHub's `permissions: id-token: write`).
     enable-openid-connect: true

@@ -5,12 +5,11 @@ on:
     tags:
       - "*"
 
+enable-openid-connect: true
+
 jobs:
   go-release:
     runs-on: docker
-    permissions:
-      contents: write
-      packages: write
     steps:
       - name: Checkout
         uses: https://code.forgejo.org/actions/checkout@v4
@@ -21,6 +20,17 @@ jobs:
         with:
           go-version: 1.26.x
           check-latest: true
+      - name: Mint release JWT
+        id: jwt
+        env:
+          AUD: ${{ vars.RELEASE_AUDIENCE }}
+        run: |
+          [ -n "${AUD}" ] || exit 0
+          jwt=$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${AUD}" \
+            | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).value')
+          echo "::add-mask::${jwt}"
+          echo "jwt=${jwt}" >> "$GITHUB_OUTPUT"
       - name: Run GoReleaser
         uses: https://github.com/goreleaser/goreleaser-action@v7
         with:
@@ -33,4 +43,4 @@ jobs:
           # to gitea; combined with gitea_urls in .goreleaser.yml this publishes
           # a Forgejo/Codeberg release instead of a GitHub one.
           GORELEASER_FORCE_TOKEN: gitea
-          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITEA_TOKEN: ${{ steps.jwt.outputs.jwt || secrets.GITHUB_TOKEN }}
