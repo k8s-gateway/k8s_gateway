@@ -1,4 +1,4 @@
-name: Cleanup Actions artifacts
+name: Cleanup Actions artifacts and release assets
 
 on:
   schedule:
@@ -10,91 +10,147 @@ on:
         type: number
         required: false
         default: 7
+      keep_releases:
+        description: "Keep binaries on this many newest releases, strip the rest"
+        type: number
+        required: false
+        default: 5
       dry_run:
         description: "Only list what would be deleted"
         type: boolean
         required: false
         default: false
 
-permissions:
-  actions: write
+enable-openid-connect: true
 
 jobs:
-  cleanup-artifacts:
+  cleanup:
     runs-on: docker
     steps:
-      - name: Delete old Actions artifacts
+      - name: Delete old artifacts and stale release assets
         env:
           FORGEJO_API: ${{ github.server_url }}/api/v1
           REPO: ${{ github.repository }}
+          CLEANUP_AUDIENCE: ${{ vars.CLEANUP_AUDIENCE }}
           TOKEN: ${{ secrets.CLEANUP_TOKEN || github.token }}
-          KEEP_DAYS: ${{ github.event.inputs.keep_days || '7' }}
+          KEEP_DAYS: ${{ github.event.inputs.keep_days }}
+          KEEP_RELEASES: ${{ github.event.inputs.keep_releases }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: |
           node - <<'EOF'
           const api = process.env.FORGEJO_API;
           const repo = process.env.REPO;
-          // Empty/garbage KEEP_DAYS must not coerce to 0 (0 = delete everything)
-          const rawKeepDays = process.env.KEEP_DAYS?.trim();
-          const keepDays = rawKeepDays && !isNaN(Number(rawKeepDays)) ? Number(rawKeepDays) : 7;
           const dryRun = process.env.DRY_RUN === "true";
+
+          // Empty/garbage values must not coerce to 0 (0 = delete/strip everything)
+          const numEnv = (name, fallback) => {
+            const raw = process.env[name]?.trim();
+            return raw && !isNaN(Number(raw)) ? Number(raw) : fallback;
+          };
+          const keepDays = numEnv("KEEP_DAYS", 7);
+          const keepReleases = numEnv("KEEP_RELEASES", 5);
           const cutoff = Date.now() - keepDays * 24 * 60 * 60 * 1000;
-          const headers = { Authorization: `token ${process.env.TOKEN}` };
 
           const fmtMiB = (bytes) => (bytes / 1024 / 1024).toFixed(2) + " MiB";
 
-          async function listAllArtifacts() {
+          async function getAuthHeader() {
+            const aud = process.env.CLEANUP_AUDIENCE?.trim();
+            const url = process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+            const reqToken = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+            if (aud && url && reqToken) {
+              const res = await fetch(`${url}&audience=${encodeURIComponent(aud)}`, {
+                headers: { Authorization: `bearer ${reqToken}` },
+              });
+              if (!res.ok) {
+                throw new Error(`JWT fetch failed: ${res.status} ${await res.text()}`);
+              }
+              const { value } = await res.json();
+              console.log(`::add-mask::${value}`);
+              console.log("Authenticating via Authorized Integration JWT");
+              return `Bearer ${value}`;
+            }
+            console.log("No CLEANUP_AUDIENCE variable; falling back to token auth");
+            return `token ${process.env.TOKEN}`;
+          }
+          const headers = { Authorization: await getAuthHeader() };
+
+          async function listAll(path) {
             const all = [];
             for (let page = 1; ; page++) {
               const res = await fetch(
-                `${api}/repos/${repo}/actions/artifacts?page=${page}&limit=50`,
+                `${api}/repos/${repo}${path}?page=${page}&limit=50`,
                 { headers },
               );
               if (!res.ok) {
-                throw new Error(`Listing artifacts failed: ${res.status} ${await res.text()}`);
+                throw new Error(`Listing ${path} failed: ${res.status} ${await res.text()}`);
               }
               // Forgejo returns a bare array; GitHub-style APIs wrap it in {artifacts}
               const body = await res.json();
-              const artifacts = Array.isArray(body) ? body : body.artifacts || [];
-              all.push(...artifacts);
-              if (artifacts.length < 50) return all;
+              const items = Array.isArray(body) ? body : body.artifacts || [];
+              all.push(...items);
+              if (items.length < 50) return all;
             }
           }
 
-          const artifacts = await listAllArtifacts();
-          const total = artifacts.reduce((sum, a) => sum + (a.size_in_bytes || 0), 0);
-          console.log(`Found ${artifacts.length} artifacts, ${fmtMiB(total)} total`);
-
-          const stale = artifacts.filter(
-            (a) => a.expired || new Date(a.created_at).getTime() < cutoff,
-          );
-
           let freed = 0;
           let failures = 0;
-          for (const a of stale) {
-            const label = `#${a.id} ${a.name} (${fmtMiB(a.size_in_bytes || 0)}, created ${a.created_at})`;
+          async function remove(path, label, bytes) {
             if (dryRun) {
               console.log(`[dry-run] would delete ${label}`);
-              freed += a.size_in_bytes || 0;
-              continue;
+              freed += bytes;
+              return;
             }
-            const res = await fetch(
-              `${api}/repos/${repo}/actions/artifacts/${a.id}`,
-              { method: "DELETE", headers },
-            );
+            const res = await fetch(`${api}/repos/${repo}${path}`, {
+              method: "DELETE",
+              headers,
+            });
             if (res.ok || res.status === 404) {
               console.log(`Deleted ${label}`);
-              freed += a.size_in_bytes || 0;
+              freed += bytes;
             } else {
               failures++;
               console.error(`Failed to delete ${label}: ${res.status} ${await res.text()}`);
             }
           }
 
-          console.log(
-            `${dryRun ? "Would free" : "Freed"} ${fmtMiB(freed)} ` +
-            `(${stale.length} of ${artifacts.length} artifacts older than ${keepDays} days or expired)`,
+          // --- Actions artifacts: delete anything expired or older than keepDays ---
+          const artifacts = await listAll("/actions/artifacts");
+          const staleArtifacts = artifacts.filter(
+            (a) => a.expired || new Date(a.created_at).getTime() < cutoff,
           );
+          console.log(
+            `Artifacts: ${artifacts.length} total, ` +
+            `${staleArtifacts.length} older than ${keepDays} days or expired`,
+          );
+          for (const a of staleArtifacts) {
+            await remove(
+              `/actions/artifacts/${a.id}`,
+              `artifact #${a.id} ${a.name} (${fmtMiB(a.size_in_bytes || 0)}, created ${a.created_at})`,
+              a.size_in_bytes || 0,
+            );
+          }
+
+          // --- Release assets: keep binaries on the newest keepReleases releases,
+          // strip attachments from the rest. Release notes and tags are kept. ---
+          const releases = (await listAll("/releases"))
+            .filter((r) => (r.assets || []).length > 0)
+            .sort((x, y) => new Date(y.created_at) - new Date(x.created_at));
+          const staleReleases = releases.slice(keepReleases);
+          console.log(
+            `Releases with assets: ${releases.length} total, ` +
+            `stripping assets from ${staleReleases.length} (keeping newest ${keepReleases})`,
+          );
+          for (const r of staleReleases) {
+            for (const asset of r.assets) {
+              await remove(
+                `/releases/${r.id}/assets/${asset.id}`,
+                `release ${r.tag_name} asset ${asset.name} (${fmtMiB(asset.size || 0)})`,
+                asset.size || 0,
+              );
+            }
+          }
+
+          console.log(`${dryRun ? "Would free" : "Freed"} ${fmtMiB(freed)} in total`);
           if (failures > 0) {
             throw new Error(`${failures} deletions failed`);
           }
