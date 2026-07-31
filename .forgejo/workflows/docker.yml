@@ -4,13 +4,19 @@ on:
   push:
     branches: [master]
     paths:
-      - cmd/**
+      - "**.go"
       - go.*
       - Dockerfile
+      - .forgejo/workflows/docker.yml
     tags:
       - "*"
   pull_request:
     branches: [master]
+    paths:
+      - "**.go"
+      - go.*
+      - Dockerfile
+      - .forgejo/workflows/docker.yml
   release:
     types: [published]
 

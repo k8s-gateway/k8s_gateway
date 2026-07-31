@@ -1,14 +1,27 @@
 name: CI
 
+# No `tags` filter: it would have to be satisfied together with `paths`, and a
+# tag points at a commit master already tested. Tags are release.yml's job.
 on:
   push:
     branches:
       - "master"
-    tags:
-      - "v*"
+    paths:
+      - "**.go"
+      - go.mod
+      - go.sum
+      - Makefile
+      - .forgejo/workflows/ci.yml
   pull_request:
     branches:
       - "master"
+    paths:
+      - "**.go"
+      - go.mod
+      - go.sum
+      - Makefile
+      - .forgejo/workflows/ci.yml
+  workflow_dispatch:
 
 jobs:
   # Linting is in a separate job because golangci-lint is quite slow when
