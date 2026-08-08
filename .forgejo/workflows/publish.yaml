@@ -1,0 +1,16 @@
+name: Pages
+on:
+  push:
+    branches: [pages]
+
+jobs:
+ publish:
+  runs-on: codeberg-tiny
+  steps:
+   - uses: actions/checkout@v7
+   - uses: https://codeberg.org/git-pages/action@v2
+     with:
+      site: https://k8s-gateway.kryptonian.kapsi.fi/
+      server: codeberg.page
+      token: ${{ forge.token }}
+      source: .
