@@ -9,31 +9,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pr-metadata:
+  pr-info:
     uses: ./.forgejo/workflows/pr-metadata.yaml
 
   pre-commit-check:
     uses: ./.forgejo/workflows/pre-commit-check.yaml
     needs:
-      - pr-metadata
+      - pr-info
     with:
-      modifiedFiles: ${{ needs.pr-metadata.outputs.changedFiles }}
+      modifiedFiles: ${{ needs.pr-info.outputs.changedFiles }}
 
   charts-lint:
     uses: ./.forgejo/workflows/charts-lint.yaml
-    if: contains(needs.pr-metadata.outputs.changedFiles, 'charts/')
+    if: contains(needs.pr-info.outputs.changedFiles, 'charts/')
     needs:
-      - pr-metadata
+      - pr-info
     with:
       checkoutCommit: ${{ github.sha }}
       chartsToLint: '["charts/k8s-gateway"]'
-      isRenovatePR: ${{ needs.pr-metadata.outputs.isRenovatePR }}
+      isRenovatePR: ${{ needs.pr-info.outputs.isRenovatePR }}
 
   charts-test:
     uses: ./.forgejo/workflows/charts-test.yaml
-    if: contains(needs.pr-metadata.outputs.changedFiles, 'charts/')
+    if: contains(needs.pr-info.outputs.changedFiles, 'charts/')
     needs:
-      - pr-metadata
+      - pr-info
     with:
       checkoutCommit: ${{ github.sha }}
       chartsToTest: '["charts/k8s-gateway"]'
