@@ -9,9 +9,6 @@ on:
       isFork:
         description: "Is the PR coming from a forked repo?"
         value: ${{ jobs.pr-metadata.outputs.isFork }}
-      changedFiles:
-        description: "A list of the files changed in this PR"
-        value: ${{ jobs.pr-changes.outputs.changed-files }}
 
 jobs:
   pr-metadata:
@@ -37,20 +34,3 @@ jobs:
           name: pr_metadata
           path: ./pr_number.txt
           retention-days: 5
-
-  pr-changes:
-    name: Collect PR changes
-    runs-on: docker
-    outputs:
-      changed-files: ${{ steps.changed-files.outputs.changed_files }}
-    steps:
-      - name: Checkout
-        uses: https://code.forgejo.org/actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Get Changed Files
-        id: changed-files
-        uses: https://github.com/bjw-s-labs/action-changed-files@a9a36fb08ce06db9b02fbd8026cc2c0945eb9841 # v0.6.0
-        with:
-          patterns: charts/**

@@ -12,18 +12,36 @@ jobs:
   pr-info:
     uses: ./.forgejo/workflows/pr-metadata.yaml
 
+  pr-changes:
+    name: Collect PR changes
+    runs-on: docker
+    outputs:
+      changed-files: ${{ steps.changed-files.outputs.changed_files }}
+    steps:
+      - name: Checkout
+        uses: https://code.forgejo.org/actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get Changed Files
+        id: changed-files
+        uses: https://github.com/bjw-s-labs/action-changed-files@a9a36fb08ce06db9b02fbd8026cc2c0945eb9841 # v0.6.0
+        with:
+          patterns: charts/**
+
   pre-commit-check:
     uses: ./.forgejo/workflows/pre-commit-check.yaml
     needs:
-      - pr-info
+      - pr-changes
     with:
-      modifiedFiles: ${{ needs.pr-info.outputs.changedFiles }}
+      modifiedFiles: ${{ needs.pr-changes.outputs.changed-files }}
 
   charts-lint:
     uses: ./.forgejo/workflows/charts-lint.yaml
-    if: contains(needs.pr-info.outputs.changedFiles, 'charts/')
+    if: contains(needs.pr-changes.outputs.changed-files, 'charts/')
     needs:
       - pr-info
+      - pr-changes
     with:
       checkoutCommit: ${{ github.sha }}
       chartsToLint: '["charts/k8s-gateway"]'
@@ -31,9 +49,9 @@ jobs:
 
   charts-test:
     uses: ./.forgejo/workflows/charts-test.yaml
-    if: contains(needs.pr-info.outputs.changedFiles, 'charts/')
+    if: contains(needs.pr-changes.outputs.changed-files, 'charts/')
     needs:
-      - pr-info
+      - pr-changes
     with:
       checkoutCommit: ${{ github.sha }}
       chartsToTest: '["charts/k8s-gateway"]'
