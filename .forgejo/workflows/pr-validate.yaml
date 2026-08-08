@@ -46,7 +46,7 @@ jobs:
         with:
           patterns: charts/**
 
-  pre-commit-check:
+  pre-commit:
     uses: ./.forgejo/workflows/pre-commit-check.yaml
     needs:
       - pr-changes
