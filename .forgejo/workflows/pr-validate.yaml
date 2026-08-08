@@ -10,7 +10,24 @@ concurrency:
 
 jobs:
   pr-info:
-    uses: ./.forgejo/workflows/pr-metadata.yaml
+    name: Collect PR metadata
+    runs-on: codeberg-tiny-lazy
+    outputs:
+      isRenovatePR: ${{ startsWith(github.head_ref, 'renovate/') }}
+      isFork: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+    steps:
+      - name: Save PR data to file
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          echo $PR_NUMBER > pr_number.txt
+
+      - name: Store pr data in artifact
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: pr_metadata
+          path: ./pr_number.txt
+          retention-days: 5
 
   pr-changes:
     name: Collect PR changes
