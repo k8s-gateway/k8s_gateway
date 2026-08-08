@@ -1,7 +1,8 @@
 name: Pages
 on:
   push:
-    branches: [pages]
+    branches: ["pages"]
+  workflow_dispatch:
 
 jobs:
  publish:
