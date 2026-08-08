@@ -13,8 +13,8 @@ jobs:
     name: Collect PR metadata
     runs-on: codeberg-tiny-lazy
     outputs:
-      isRenovatePR: ${{ startsWith(github.head_ref, 'renovate/') }}
-      isFork: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+      isRenovatePR: ${{ startsWith(github.head_ref, 'renovate/') && 'true' || 'false' }}
+      isFork: ${{ github.event.pull_request.head.repo.full_name != github.repository && 'true' || 'false' }}
     steps:
       - name: Save PR data to file
         env:
