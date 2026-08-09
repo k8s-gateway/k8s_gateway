@@ -33,7 +33,7 @@ k8s_yaml('./test/cilium/dual-stack/crd-values.yaml')
 
 # CoreDNS with updated RBAC
 k8s_yaml(helm(
-    './charts/k8s-gateway',
+    './chart',
     namespace="kube-system",
     name='excoredns',
     values=['./test/dual-stack/k8s-gateway-values.yaml'],

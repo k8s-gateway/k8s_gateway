@@ -44,31 +44,48 @@ jobs:
         id: changed-files
         uses: https://github.com/bjw-s-labs/action-changed-files@a9a36fb08ce06db9b02fbd8026cc2c0945eb9841 # v0.6.0
         with:
-          patterns: charts/**
+          patterns: chart/**
 
   pre-commit:
     uses: ./.forgejo/workflows/pre-commit-check.yaml
+
+  verify-chart:
+    name: Verify chart version/changelog
+    runs-on: codeberg-tiny-lazy
+    if: contains(needs.pr-changes.outputs.changed-files, 'chart/')
     needs:
       - pr-changes
-    with:
-      modifiedFiles: ${{ needs.pr-changes.outputs.changed-files }}
+    steps:
+      - name: Checkout
+        uses: https://code.forgejo.org/actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify chart version
+        uses: https://github.com/bjw-s/helm-charts-actions/verify-chart-version@2025.2.0
+        with:
+          chart: chart
+
+      - name: Verify chart changelog
+        uses: https://github.com/bjw-s/helm-charts-actions/verify-chart-changelog@2025.2.0
+        if: ${{ !startsWith(github.head_ref, 'renovate/') }}
+        with:
+          chart: chart
 
   charts-lint:
     uses: ./.forgejo/workflows/charts-lint.yaml
-    if: contains(needs.pr-changes.outputs.changed-files, 'charts/')
+    if: contains(needs.pr-changes.outputs.changed-files, 'chart/')
     needs:
-      - pr-info
       - pr-changes
     with:
       checkoutCommit: ${{ github.sha }}
-      chartsToLint: '["charts/k8s-gateway"]'
-      isRenovatePR: ${{ needs.pr-info.outputs.isRenovatePR }}
+      chartsToLint: '["chart"]'
 
   charts-test:
     uses: ./.forgejo/workflows/charts-test.yaml
-    if: contains(needs.pr-changes.outputs.changed-files, 'charts/')
+    if: contains(needs.pr-changes.outputs.changed-files, 'chart/')
     needs:
       - pr-changes
     with:
       checkoutCommit: ${{ github.sha }}
-      chartsToTest: '["charts/k8s-gateway"]'
+      chartsToTest: '["chart"]'

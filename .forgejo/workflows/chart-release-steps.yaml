@@ -24,11 +24,6 @@ name: "Release chart (Reusable)"
 on:
   workflow_call:
     inputs:
-      chart:
-        description: >
-          Json encoded list of Helm charts to release. Defaults to releasing everything.
-        required: true
-        type: string
       createRelease:
         description: >
           Should the chart be published as a Forgejo/Codeberg release
@@ -61,6 +56,8 @@ jobs:
 
       - name: Install Mise and required tools
         uses: https://github.com/jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          working_directory: src/chart
 
       - name: Mint chart release JWT
         id: jwt
@@ -86,18 +83,9 @@ jobs:
         id: chart-details
         uses: https://github.com/bjw-s-labs/helm-charts-actions/get-chart-details@4f48dbc7967b9c73c1a1f72db82de8de9274a626
         with:
-          path: src/charts/${{ inputs.chart }}
+          path: src/chart
           validateChartYaml: true
           requireChangelog: true
-
-      - name: Store chart folder
-        id: chart-folder
-        shell: bash
-        env:
-          CHART_DIR: "${{ inputs.chart }}"
-        run: |
-          TARGET_DIR=$(basename $(dirname ${CHART_DIR}))
-          echo "chart_folder=${TARGET_DIR}" >> "$GITHUB_OUTPUT"
 
       - name: Format changelog
         id: format-changelog
@@ -134,15 +122,15 @@ jobs:
       - name: Dereference JSON schema before packaging
         uses: https://github.com/bjw-s-labs/helm-charts-actions/dereference-json-schema@4f48dbc7967b9c73c1a1f72db82de8de9274a626
         with:
-          schemaFile: "src/charts/${{ inputs.chart }}/values.schema.json"
-          outputFile: "src/charts/${{ inputs.chart }}/values.schema.json"
+          schemaFile: "src/chart/values.schema.json"
+          outputFile: "src/chart/values.schema.json"
           allowFileNotFound: true
 
       - name: Package Helm Chart
         id: package-chart
         shell: bash
         env:
-          CHART_DIR: "src/charts/${{ inputs.chart }}"
+          CHART_DIR: "src/chart"
           TARGET_DIR: "${{ runner.temp }}/charts_out"
         run: |
           mkdir -p "${TARGET_DIR}"
@@ -161,12 +149,9 @@ jobs:
         if: ${{ inputs.publishToPages }}
         shell: bash
         env:
-          CHART_DIR: "${{ inputs.chart }}"
-          CHART_FOLDER: ${{ steps.chart-folder.outputs.chart_folder }}
           PACKAGE_FILE: ${{ steps.package-chart.outputs.result }}
         run: |
-          TARGET_DIR=$(dirname ${CHART_DIR})
-          cp "${PACKAGE_FILE}" "pages/${CHART_FOLDER}/"
+          cp "${PACKAGE_FILE}" "pages/"
 
       - name: Update repository
         if: ${{ inputs.publishToPages }}
@@ -180,7 +165,7 @@ jobs:
         shell: bash
         working-directory: pages
         run: |
-          helm repo index . --url https://k8s-gateway.codeberg.page/k8s_gateway
+          helm repo index . --url https://k8s-gateway.kryptonian.kapsi.fi
 
       - name: Commit and push changes
         if: ${{ inputs.publishToPages }}

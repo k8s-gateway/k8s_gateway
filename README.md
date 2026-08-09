@@ -33,7 +33,7 @@ This plugin is **NOT** supposed to be used for intra-cluster DNS resolution and 
 The recommended installation method is using the helm chart provided in the repo:
 
 ```
-helm repo add k8s_gateway https://k8s-gateway.github.io/k8s_gateway/
+helm repo add k8s_gateway https://k8s-gateway.kryptonian.kapsi.fi/
 helm install exdns --set domain=foo k8s_gateway/k8s-gateway
 ```
 
@@ -185,7 +185,7 @@ This label works for all supported resource types:
 - **Ingress** resources
 - **Service** resources (of type LoadBalancer, or any service with the `resolve-endpoints` annotation)
 - **HTTPRoute** resources
-- **TLSRoute** resources  
+- **TLSRoute** resources
 - **GRPCRoute** resources
 - **DNSEndpoint** resources
 
@@ -279,8 +279,8 @@ For example, the above requirements could be satisfied with the following comman
 
 1. Install two instances of `k8s_plugin` gateway pointing at each other:
 ```
-helm install -n kube-system exdns-1 --set domain=zone.example.com --set secondary=exdns-2.kube-system ./charts/k8s-gateway
-helm install -n kube-system exdns-2 --set domain=zone.example.com --set secondary=exdns-1.kube-system ./charts/k8s-gateway
+helm install -n kube-system exdns-1 --set domain=zone.example.com --set secondary=exdns-2.kube-system ./chart
+helm install -n kube-system exdns-2 --set domain=zone.example.com --set secondary=exdns-1.kube-system ./chart
 ```
 
 2. Obtain their external IPs

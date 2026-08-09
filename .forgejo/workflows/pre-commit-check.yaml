@@ -5,19 +5,29 @@ on:
     inputs:
       modifiedFiles:
         description: >
-          A JSON encoded array of files to check
-        required: true
+          A JSON encoded array of files to check. If omitted, all files are
+          checked.
+        required: false
         type: string
+        default: "[]"
 
 jobs:
   pre-commit-check:
     name: Run pre-commit checks
-    runs-on: docker
+    runs-on: codeberg-tiny
     steps:
       - name: Checkout
         uses: https://code.forgejo.org/actions/checkout@v4
 
-      - name: Run against changes
-        uses: https://github.com/pre-commit/action@v3.0.1
+      - uses: https://github.com/actions/setup-go@v6
         with:
-          extra_args: --files ${{ join(fromJson(inputs.modifiedFiles), ' ') }} --config .ci/pre-commit/config.yaml
+          go-version: stable
+
+      - name: Run pre-commit
+        env:
+          EXTRA_ARGS: >-
+            ${{ inputs.modifiedFiles != '[]' && format('--files {0}', join(fromJson(inputs.modifiedFiles), ' ')) || '--all-files' }}
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install pre-commit
+          .venv/bin/pre-commit run --config .ci/pre-commit/config.yaml ${EXTRA_ARGS}

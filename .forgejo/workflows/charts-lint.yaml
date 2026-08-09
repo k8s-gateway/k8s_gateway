@@ -6,10 +6,6 @@ on:
       checkoutCommit:
         required: true
         type: string
-      isRenovatePR:
-        required: true
-        default: "false"
-        type: string
       chartsToLint:
         description: >
           A JSON encoded array of charts to lint
@@ -28,7 +24,7 @@ jobs:
       matrix:
         chart: ${{ fromJSON(inputs.chartsToLint) }}
       fail-fast: false
-    runs-on: docker
+    runs-on: codeberg-medium
     steps:
       - name: Checkout
         uses: https://code.forgejo.org/actions/checkout@v4
@@ -36,25 +32,12 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.checkoutCommit }}
 
-      - name: Verify chart version
-        uses: https://github.com/bjw-s/helm-charts-actions/verify-chart-version@2025.2.0
-        id: verify-chart-version
-        with:
-          chart: "${{ matrix.chart }}"
-
-      - name: Verify chart changelog
-        uses: https://github.com/bjw-s/helm-charts-actions/verify-chart-changelog@2025.2.0
-        if: inputs.isRenovatePR != 'true'
-        id: verify-chart-changelog
-        with:
-          chart: "${{ matrix.chart }}"
-
-      - name: Install Kubernetes tools
-        uses: https://github.com/yokawasa/action-setup-kube-tools@v0.14.0
-        with:
-          setup-tools: |
-            helmv3
-          helm: "${{ env.HELM_VERSION }}"
+      - name: Install Helm
+        run: |
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod +x get_helm.sh
+          ./get_helm.sh --version "v${{ env.HELM_VERSION }}"
+          rm get_helm.sh
 
       - name: Set up chart-testing
         uses: https://github.com/helm/chart-testing-action@v2.8.0

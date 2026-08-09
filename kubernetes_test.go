@@ -871,9 +871,9 @@ func TestEndpointSliceAddresses(t *testing.T) {
 		Endpoints: []discovery.Endpoint{
 			{Addresses: []string{"10.1.0.1"}, Conditions: discovery.EndpointConditions{Ready: &ready}},
 			{Addresses: []string{"10.1.0.2"}, Conditions: discovery.EndpointConditions{Ready: &notReady}}, // excluded
-			{Addresses: []string{"10.1.0.3"}},                                                             // nil Ready -> treated as ready
-			{Addresses: []string{"fd00::1"}, Conditions: discovery.EndpointConditions{Ready: &ready}},     // IPv6
-			{Addresses: []string{"not-an-ip"}, Conditions: discovery.EndpointConditions{Ready: &ready}},   // skipped
+			{Addresses: []string{"10.1.0.3"}}, // nil Ready -> treated as ready
+			{Addresses: []string{"fd00::1"}, Conditions: discovery.EndpointConditions{Ready: &ready}},   // IPv6
+			{Addresses: []string{"not-an-ip"}, Conditions: discovery.EndpointConditions{Ready: &ready}}, // skipped
 		},
 	}
 	es2 := &discovery.EndpointSlice{

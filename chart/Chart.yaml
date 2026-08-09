@@ -8,8 +8,8 @@ home: https://github.com/k8s-gateway/k8s_gateway
 sources:
   - https://github.com/k8s-gateway/k8s_gateway
 maintainers:
-  - url: https://github.com/samip5
-    name: samip5
+  - url: https://codeberg.org/kryptonian
+    name: kryptonian
 annotations:
   artifacthub.io/changes: |
     - kind: added

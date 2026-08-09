@@ -3,150 +3,21 @@ name: "Charts: Release"
 concurrency: helm-release
 
 on:
-  workflow_dispatch:
-    inputs:
-      charts:
-        description: "JSON encoded list of charts to release"
-        required: true
-        type: string
-        default: "[]"
+  workflow_dispatch: {}
   push:
     branches:
       - master
     paths:
-      - "charts/*"
+      - "chart/**"
 
 jobs:
-  prepare:
-    name: Prepare data required for workflow
-    runs-on: docker
-    outputs:
-      otherChartsToRelease: ${{ steps.filtered-charts.outputs.otherChartsToRelease }}
-    steps:
-      # ----------------------------
-      # Setup
-      # ----------------------------
-      - name: Checkout
-        uses: https://code.forgejo.org/actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Install Mise and set up tool cache
-        uses: https://github.com/jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        with:
-          working_directory: charts
-
-      - name: Grab repository configuration
-        id: repo-config
-        shell: bash
-        run: |
-          echo "config=$(yq '.' '.ci/repo-config.yaml' -o json -I=0)" >> "$GITHUB_OUTPUT"
-
-      - name: Get changed charts
-        id: changed-charts
-        if: ${{ github.event_name != 'workflow_dispatch' }}
-        uses: https://github.com/bjw-s-labs/action-changed-files@a9a36fb08ce06db9b02fbd8026cc2c0945eb9841 # v0.6.0
-        with:
-          path: charts
-          include_only_directories: true
-          max_depth: 2
-          patterns: |
-            !library/**
-
-      - name: Get specified charts
-        id: specified-charts
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        uses: https://github.com/actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          INPUTS_CHARTS: ${{ inputs.charts }}
-        with:
-          script: |
-            const fs = require('fs');
-            let input = process.env.INPUTS_CHARTS ?? '[]';
-            let cwd = process.cwd();
-
-            let tmpCharts = []
-            if (input === '[]') {
-              console.log("Empty charts input, scanning for charts in repository");
-              const globber = await glob.create('charts/*', { implicitDescendants: false });
-              for await (const file of globber.globGenerator()) {
-                if (fs.lstatSync(file).isDirectory()) {
-                  const chartYamlPath = `${file}/Chart.yaml`;
-                  if (fs.existsSync(chartYamlPath)) {
-                    relativePath = file.slice(`${cwd}/charts/`.length);
-                    tmpCharts.push(relativePath);
-                  }
-                }
-              }
-            } else {
-              tmpCharts = JSON.parse(input);
-              tmpCharts.forEach(function (chart) {
-                const fullPath = `${cwd}/charts/${chart}`;
-                if (!fs.existsSync(fullPath)) {
-                  core.setFailed(`Chart ${chart} does not exist in repository`);
-                  process.exit(1);
-                }
-                if (!fs.lstatSync(fullPath).isDirectory()) {
-                  core.setFailed(`${chart} is not a valid directory`);
-                  process.exit(1);
-                }
-              });
-            }
-
-            let otherCharts = tmpCharts.filter(chart => !chart.startsWith('library/'));
-            core.setOutput('otherChartsToRelease', JSON.stringify(otherCharts));
-
-      - name: Filter out excluded charts
-        id: filtered-charts
-        uses: https://github.com/actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          SPECIFIED_CHARTS: ${{ steps.specified-charts.outputs.otherChartsToRelease }}
-          CHANGED_CHARTS: ${{ steps.changed-charts.outputs.changed_files }}
-          REPO_SETTINGS: ${{ steps.repo-config.outputs.config }}
-        with:
-          script: |
-            const SPECIFIED_CHARTS = process.env.SPECIFIED_CHARTS ?? '[]';
-            const CHANGED_CHARTS = process.env.CHANGED_CHARTS ?? '[]';
-            const REPO_SETTINGS = process.env.REPO_SETTINGS ?? '{}';
-
-            const eventName = '${{ github.event_name }}';
-            const repoSettings = JSON.parse(REPO_SETTINGS);
-
-            let otherChartsInput = JSON.parse(eventName === 'workflow_dispatch' ? SPECIFIED_CHARTS : CHANGED_CHARTS);
-            if (!Array.isArray(otherChartsInput)) {
-              otherChartsInput = [];
-            }
-
-            let excludedFromRelease = repoSettings['excluded-charts-release'];
-            if (!Array.isArray(excludedFromRelease)) {
-              excludedFromRelease = [];
-            }
-
-            const otherCharts = otherChartsInput.filter(item => excludedFromRelease.indexOf(item) < 0);
-            core.setOutput('otherChartsToRelease', JSON.stringify(otherCharts));
-            console.log('Other charts to release:', JSON.stringify(otherCharts, null, 2));
-
-  release-other-charts:
-    name: Release other charts
-    needs:
-      - prepare
-    if: |-
-      ${{
-        !cancelled() &&
-        !contains(needs.*.result, 'failure') &&
-        (needs.prepare.outputs.otherChartsToRelease != '[]' && needs.prepare.outputs.otherChartsToRelease != '')
-      }}
-    strategy:
-      matrix:
-        chart: ${{ fromJSON(needs.prepare.outputs.otherChartsToRelease) }}
-      fail-fast: false
-      max-parallel: 1
+  release-chart:
+    name: Release chart
     # Grants the invoked reusable workflow's jobs OIDC token issuance
     # (Forgejo's equivalent of GitHub's `permissions: id-token: write`).
     enable-openid-connect: true
     uses: ./.forgejo/workflows/chart-release-steps.yaml
     with:
-      chart: ${{ matrix.chart }}
       createRelease: true
       publishToPages: true
       publishToOciRegistry: true

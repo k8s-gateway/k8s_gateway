@@ -38,18 +38,22 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.checkoutCommit }}
 
-      - name: Install Kubernetes tools
-        uses: https://github.com/yokawasa/action-setup-kube-tools@v0.14.0
-        with:
-          setup-tools: |
-            helmv3
-            kubectl
-          helm: "${{ env.HELM_VERSION }}"
-          kubectl: "${{ matrix.k8s_version }}"
+      - name: Install Helm
+        run: |
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod +x get_helm.sh
+          ./get_helm.sh --version "v${{ env.HELM_VERSION }}"
+          rm get_helm.sh
 
-      - uses: https://github.com/actions/setup-python@v6
-        with:
-          python-version: "3.14"
+      - name: Install kubectl
+        run: |
+          curl -fsSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/${{ matrix.k8s_version }}/bin/linux/amd64/kubectl"
+          chmod +x /usr/local/bin/kubectl
+
+      - name: Install Python
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends python3 python3-pip
 
       - name: Set up chart-testing
         uses: https://github.com/helm/chart-testing-action@v2.8.0
@@ -99,12 +103,12 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.checkoutCommit }}
 
-      - name: Install Kubernetes tools
-        uses: https://github.com/yokawasa/action-setup-kube-tools@v0.14.0
-        with:
-          setup-tools: |
-            helmv3
-          helm: "${{ env.HELM_VERSION }}"
+      - name: Install Helm
+        run: |
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod +x get_helm.sh
+          ./get_helm.sh --version "v${{ env.HELM_VERSION }}"
+          rm get_helm.sh
 
       - name: Run tests
         run: |
