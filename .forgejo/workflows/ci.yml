@@ -75,5 +75,6 @@ jobs:
         uses: https://github.com/codecov/codecov-action@v7
         with:
           fail_ci_if_error: false
+          use_oidc: false
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

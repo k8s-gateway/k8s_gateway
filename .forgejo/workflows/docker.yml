@@ -112,6 +112,7 @@ jobs:
             org.opencontainers.image.version=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.vendor=${{ github.repository_owner }}
+            org.opencontainers.image.licenses=Apache-2.0
           tags: ${{ steps.build-type.outputs.tags }}
           outputs: ${{ steps.build-type.outputs.type }}
           context: .

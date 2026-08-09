@@ -72,7 +72,7 @@ jobs:
           echo "jwt=${jwt}" >> "$GITHUB_OUTPUT"
 
       - name: Login to OCI Registry
-        if: ${{ inputs.publishToOciRegistry }}
+        if: ${{ success() && inputs.publishToOciRegistry }}
         uses: https://github.com/docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: codeberg.org
@@ -86,6 +86,20 @@ jobs:
           path: src/chart
           validateChartYaml: true
           requireChangelog: true
+
+      - name: Check for existing release
+        id: version-check
+        shell: bash
+        working-directory: src
+        env:
+          TAG: "${{ steps.chart-details.outputs.name }}-${{ steps.chart-details.outputs.version }}"
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" > /dev/null 2>&1; then
+            echo "::warning::Version ${TAG} already exists remotely, skipping publish steps."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Format changelog
         id: format-changelog
@@ -139,14 +153,14 @@ jobs:
 
       - name: Checkout pages branch
         uses: https://code.forgejo.org/actions/checkout@v4
-        if: ${{ inputs.publishToPages }}
+        if: ${{ success() && inputs.publishToPages && steps.version-check.outputs.exists != 'true' }}
         with:
           path: pages
           ref: pages
 
       - name: Copy package to pages structure
         id: copy-package
-        if: ${{ inputs.publishToPages }}
+        if: ${{ success() && inputs.publishToPages && steps.version-check.outputs.exists != 'true' }}
         shell: bash
         env:
           PACKAGE_FILE: ${{ steps.package-chart.outputs.result }}
@@ -155,14 +169,14 @@ jobs:
           ls -al "pages/"
 
       - name: Update Helm chart index
-        if: ${{ inputs.publishToPages }}
+        if: ${{ success() && inputs.publishToPages && steps.version-check.outputs.exists != 'true' }}
         shell: bash
         working-directory: pages
         run: |
           helm repo index . --url https://k8s-gateway.kryptonian.kapsi.fi
 
       - name: Commit and push changes
-        if: ${{ inputs.publishToPages }}
+        if: ${{ success() && inputs.publishToPages && steps.version-check.outputs.exists != 'true' }}
         uses: https://github.com/stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7.2.0
         with:
           commit_message: "feat: Add Chart package ${{ steps.chart-details.outputs.name }}-${{ steps.chart-details.outputs.version }}"
@@ -172,11 +186,25 @@ jobs:
           commit_user_name: forgejo-actions
           commit_user_email: forgejo-actions@noreply.codeberg.org
           commit_author: forgejo-actions <forgejo-actions@noreply.codeberg.org>
-          tag_name: "${{ steps.chart-details.outputs.name }}-${{ steps.chart-details.outputs.version }}"
+
+      - name: Re-checkout source branch for tagging
+        if: ${{ success() && inputs.createRelease && steps.version-check.outputs.exists != 'true' }}
+        uses: https://code.forgejo.org/actions/checkout@v4
+        with:
+          path: src
+
+      - name: Create tag
+        if: ${{ success() && inputs.createRelease && steps.version-check.outputs.exists != 'true' }}
+        shell: bash
+        working-directory: src
+        run: |
+          TAG="${{ steps.chart-details.outputs.name }}-${{ steps.chart-details.outputs.version }}"
+          git tag "$TAG"
+          git push origin "$TAG"
 
       - name: Create release for tag
         uses: https://code.forgejo.org/actions/forgejo-release@v2
-        if: ${{ inputs.createRelease }}
+        if: ${{ success() && inputs.createRelease && steps.version-check.outputs.exists != 'true' }}
         with:
           direction: upload
           url: https://codeberg.org
@@ -187,13 +215,13 @@ jobs:
           hide-archive-link: true
 
       - name: Install Cosign
-        if: ${{ inputs.publishToOciRegistry }}
+        if: ${{ success() && inputs.publishToOciRegistry && steps.version-check.outputs.exists != 'true' }}
         uses: https://github.com/sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v2.6.1
 
       - name: Push Helm charts to OCI registry
-        if: ${{ inputs.publishToOciRegistry }}
+        if: ${{ success() && inputs.publishToOciRegistry && steps.version-check.outputs.exists != 'true' }}
         shell: bash
         env:
           PACKAGE_FILE: ${{ steps.package-chart.outputs.result }}
