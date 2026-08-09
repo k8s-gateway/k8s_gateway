@@ -151,14 +151,8 @@ jobs:
         env:
           PACKAGE_FILE: ${{ steps.package-chart.outputs.result }}
         run: |
-          cp "${PACKAGE_FILE}" "pages/"
-
-      - name: Update repository
-        if: ${{ inputs.publishToPages }}
-        shell: bash
-        working-directory: pages
-        run: |
-          git pull
+          cp -v "${PACKAGE_FILE}" "pages/"
+          ls -al "pages/"
 
       - name: Update Helm chart index
         if: ${{ inputs.publishToPages }}
