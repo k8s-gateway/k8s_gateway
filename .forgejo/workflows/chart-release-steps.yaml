@@ -11,9 +11,9 @@
 #  - OIDC uses Forgejo's own `enable-openid-connect: true` (not GitHub's
 #    `permissions: id-token: write`, which Forgejo does not honor for this
 #    purpose) and the issuer is `<instance>/api/actions` per Forgejo's OIDC
-#    docs. Whether Codeberg's OIDC issuer is trusted by the public-good
-#    Sigstore Fulcio/Rekor instances is still unverified — test this
-#    end-to-end before depending on it, or switch to key-based cosign signing.
+#    docs. Verified 2026-09: the public-good Sigstore Fulcio instance does NOT
+#    trust Codeberg's issuer (Fulcio 400), so chart signing is key-based via
+#    the optional COSIGN_PRIVATE_KEY/COSIGN_PASSWORD secrets instead.
 #  - Registry and release auth use a JWT minted from the OIDC token, via an
 #    Authorized Integration with package + repository write. Publish its
 #    audience as the CHART_RELEASE_AUDIENCE variable; without it this falls
@@ -240,6 +240,12 @@ jobs:
 
       # cosign comes from mise (chart/.mise.tools) — the cosign-installer
       # action needs envsubst, which the runner image lacks.
+      # Signing is key-based: the public-good Sigstore Fulcio instance does not
+      # trust Codeberg's OIDC issuer (verified against fulcio's identity
+      # config, 2026-09), so keyless signing gets "Fulcio returned 400".
+      # Generate a keypair with `cosign generate-key-pair` and store the
+      # private key + password as COSIGN_PRIVATE_KEY / COSIGN_PASSWORD
+      # secrets; signing is skipped when they are absent.
       - name: Push Helm charts to OCI registry
         if: ${{ success() && inputs.publishToOciRegistry && steps.oci-version-check.outputs.exists != 'true' }}
         shell: bash
@@ -249,12 +255,15 @@ jobs:
           CHART_VERSION: ${{ steps.chart-details.outputs.version }}
           CHART_TAG_BASE: codeberg.org/k8s-gateway/charts
           CHART_TAG: ${{ steps.chart-details.outputs.name }}:${{ steps.chart-details.outputs.version }}
-          GITHUB_REF: ${{ github.ref }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |-
           helm push "${PACKAGE_FILE}" oci://${CHART_TAG_BASE} &> push-metadata.txt
           cat push-metadata.txt
           CHART_DIGEST=$(awk '/Digest: /{print $2}' push-metadata.txt)
-          cosign sign --yes "${CHART_TAG_BASE}/${CHART_TAG}@${CHART_DIGEST}"
-          cosign verify "${CHART_TAG_BASE}/${CHART_TAG}@${CHART_DIGEST}" \
-            --certificate-oidc-issuer "https://codeberg.org/api/actions" \
-            --certificate-identity "https://codeberg.org/${{ github.repository }}/.forgejo/workflows/chart-release-steps.yaml@${GITHUB_REF}"
+          if [ -n "${COSIGN_PRIVATE_KEY}" ]; then
+            cosign sign --yes --key env://COSIGN_PRIVATE_KEY --tlog-upload=false \
+              "${CHART_TAG_BASE}/${CHART_TAG}@${CHART_DIGEST}"
+          else
+            echo "::notice::COSIGN_PRIVATE_KEY secret not set, skipping chart signing."
+          fi
