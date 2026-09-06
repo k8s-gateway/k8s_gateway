@@ -169,14 +169,29 @@ jobs:
 
       - name: Checkout pages branch
         uses: https://code.forgejo.org/actions/checkout@v4
-        if: ${{ success() && inputs.publishToPages && steps.version-check.outputs.exists != 'true' }}
+        if: ${{ success() && inputs.publishToPages }}
         with:
           path: pages
           ref: pages
 
+      - name: Check for existing package in pages
+        id: pages-version-check
+        if: ${{ success() && inputs.publishToPages }}
+        shell: bash
+        working-directory: pages
+        env:
+          PACKAGE_FILE: ${{ steps.package-chart.outputs.result }}
+        run: |
+          if [ -f "$(basename "${PACKAGE_FILE}")" ]; then
+            echo "::warning::$(basename "${PACKAGE_FILE}") already exists in pages branch, skipping pages publish."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Copy package to pages structure
         id: copy-package
-        if: ${{ success() && inputs.publishToPages && steps.version-check.outputs.exists != 'true' }}
+        if: ${{ success() && inputs.publishToPages && steps.pages-version-check.outputs.exists != 'true' }}
         shell: bash
         env:
           PACKAGE_FILE: ${{ steps.package-chart.outputs.result }}
@@ -185,14 +200,14 @@ jobs:
           ls -al "pages/"
 
       - name: Update Helm chart index
-        if: ${{ success() && inputs.publishToPages && steps.version-check.outputs.exists != 'true' }}
+        if: ${{ success() && inputs.publishToPages && steps.pages-version-check.outputs.exists != 'true' }}
         shell: bash
         working-directory: pages
         run: |
           helm repo index . --url https://k8s-gateway.kryptonian.kapsi.fi
 
       - name: Commit and push changes
-        if: ${{ success() && inputs.publishToPages && steps.version-check.outputs.exists != 'true' }}
+        if: ${{ success() && inputs.publishToPages && steps.pages-version-check.outputs.exists != 'true' }}
         uses: https://github.com/stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7.2.0
         with:
           commit_message: "feat: Add Chart package ${{ steps.chart-details.outputs.name }}-${{ steps.chart-details.outputs.version }}"
@@ -202,12 +217,6 @@ jobs:
           commit_user_name: forgejo-actions
           commit_user_email: forgejo-actions@noreply.codeberg.org
           commit_author: forgejo-actions <forgejo-actions@noreply.codeberg.org>
-
-      - name: Re-checkout source branch for tagging
-        if: ${{ success() && inputs.createRelease && steps.version-check.outputs.exists != 'true' }}
-        uses: https://code.forgejo.org/actions/checkout@v4
-        with:
-          path: src
 
       - name: Create tag
         if: ${{ success() && inputs.createRelease && steps.version-check.outputs.exists != 'true' }}
