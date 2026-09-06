@@ -238,12 +238,8 @@ jobs:
           release-notes: ${{ steps.format-changelog.outputs.changelog }}
           hide-archive-link: true
 
-      - name: Install Cosign
-        if: ${{ success() && inputs.publishToOciRegistry && steps.oci-version-check.outputs.exists != 'true' }}
-        uses: https://github.com/sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        with:
-          cosign-release: v2.6.5
-
+      # cosign comes from mise (chart/.mise.tools) — the cosign-installer
+      # action needs envsubst, which the runner image lacks.
       - name: Push Helm charts to OCI registry
         if: ${{ success() && inputs.publishToOciRegistry && steps.oci-version-check.outputs.exists != 'true' }}
         shell: bash

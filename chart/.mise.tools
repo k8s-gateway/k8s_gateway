@@ -16,6 +16,7 @@ rust = "1.92.0" # Required for schematools
 "aqua:helm" = "3.19.4"
 "aqua:helm/chart-testing" = "3.14.0"
 "aqua:mikefarah/yq" = "4.50.1"
+"aqua:sigstore/cosign" = "2.6.5" # Required for chart signing in CI
 "cargo:schematools-cli" = "0.22.0"
 "pipx:yamllint" = "1.37.1"
 "pipx:yamale" = "6.1.0"
