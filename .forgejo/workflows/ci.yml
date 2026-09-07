@@ -39,7 +39,7 @@ jobs:
       - name: golangci-lint
         uses: https://github.com/golangci/golangci-lint-action@v9
         with:
-          version: v2.12.2
+          version: v2.13.2
           args: --timeout=15m0s
 
   unit-test:
