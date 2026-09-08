@@ -29,7 +29,7 @@ jobs:
   lint:
     runs-on: docker
     steps:
-      - uses: https://github.com/actions/setup-go@v6
+      - uses: https://github.com/actions/setup-go@v7
         with:
           go-version: stable
       - name: Checkout code
@@ -45,7 +45,7 @@ jobs:
   unit-test:
     runs-on: docker
     steps:
-      - uses: https://github.com/actions/setup-go@v6
+      - uses: https://github.com/actions/setup-go@v7
         with:
           go-version: stable
       - uses: https://code.forgejo.org/actions/checkout@v7
