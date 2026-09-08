@@ -3,7 +3,7 @@ name: Go Release
 on:
   push:
     tags:
-      - "*"
+      - "v*"
 
 enable-openid-connect: true
 

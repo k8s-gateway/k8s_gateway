@@ -9,7 +9,7 @@ on:
       - Dockerfile
       - .forgejo/workflows/docker.yml
     tags:
-      - "*"
+      - "v*"
   pull_request:
     branches: [master]
     paths:
@@ -24,6 +24,7 @@ enable-openid-connect: true
 
 jobs:
   build:
+    if: ${{ github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v') }}
     name: Build (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -138,7 +139,7 @@ jobs:
           echo "docker pull ${{ needs.build.outputs.image_arm64 }}"
 
   release:
-    if: ${{ github.event_name == 'release' }}
+    if: ${{ github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') }}
     needs: build
     name: Release
     runs-on: docker
