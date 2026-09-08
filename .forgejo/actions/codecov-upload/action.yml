@@ -1,0 +1,53 @@
+name: Upload to Codecov
+description: >
+  In-repo replacement for codecov/codecov-action's token-based upload path
+  (its `use_oidc: false` mode). codecov-action's own action.yml pulls in an
+  unqualified `uses: actions/github-script@...` for its OIDC step, which
+  Forgejo resolves against DEFAULT_ACTIONS_URL (data.forgejo.org on
+  Codeberg) — a mirror that doesn't carry github-script, so the runner's
+  clone 404s before the job graph even evaluates that step's `if:`. This
+  repo never uses OIDC upload, so skip the wrapper action and call the
+  codecov CLI directly, mirroring what its dist/codecov.sh does.
+
+inputs:
+  token:
+    description: Codecov upload token
+    required: true
+  sha:
+    description: Commit SHA being reported
+    required: true
+  fail_ci_if_error:
+    description: Fail the step if the upload fails
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Download and verify codecov CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd "${RUNNER_TEMP}"
+        curl -sSfO --retry 5 --retry-delay 2 https://cli.codecov.io/latest/linux/codecov
+        curl -sSfO --retry 5 --retry-delay 2 https://cli.codecov.io/latest/linux/codecov.SHA256SUM
+        curl -sSfO --retry 5 --retry-delay 2 https://cli.codecov.io/latest/linux/codecov.SHA256SUM.sig
+        curl -sSf https://keybase.io/codecovsecops/pgp_keys.asc | gpg --no-default-keyring --keyring trustedkeys.gpg --import
+        gpg --no-default-keyring --keyring trustedkeys.gpg --verify codecov.SHA256SUM.sig codecov.SHA256SUM
+        sha256sum -c codecov.SHA256SUM
+        chmod +x codecov
+
+    - name: Upload coverage
+      shell: bash
+      env:
+        TOKEN: ${{ inputs.token }}
+        SHA: ${{ inputs.sha }}
+        FAIL_CI_IF_ERROR: ${{ inputs.fail_ci_if_error }}
+      run: |
+        set -o pipefail
+        "${RUNNER_TEMP}/codecov" upload-coverage -t "${TOKEN}" --git-service github --sha "${SHA}" --gcov-executable gcov
+        status=$?
+        rm -f "${RUNNER_TEMP}/codecov"
+        if [ "${status}" -ne 0 ] && [ "${FAIL_CI_IF_ERROR}" = "true" ]; then
+          exit "${status}"
+        fi
+        exit 0

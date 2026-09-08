@@ -12,6 +12,7 @@ on:
       - go.sum
       - Makefile
       - .forgejo/workflows/ci.yml
+      - .forgejo/actions/codecov-upload/**
   pull_request:
     branches:
       - "master"
@@ -21,6 +22,7 @@ on:
       - go.sum
       - Makefile
       - .forgejo/workflows/ci.yml
+      - .forgejo/actions/codecov-upload/**
   workflow_dispatch:
 
 jobs:
@@ -72,9 +74,8 @@ jobs:
       - name: Run tests with coverage
         run: go test -race -coverprofile=coverage.out ./...
       - name: Upload coverage reports
-        uses: https://github.com/codecov/codecov-action@v7
+        uses: ./.forgejo/actions/codecov-upload
         with:
-          fail_ci_if_error: false
-          use_oidc: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          sha: ${{ github.sha }}
+          fail_ci_if_error: "false"

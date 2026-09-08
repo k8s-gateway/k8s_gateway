@@ -258,8 +258,8 @@ func TestDNSEndpointLister(t *testing.T) {
 	externaldnsCRDClient = client
 	defer func() { externaldnsCRDClient = old }()
 
-	lister := dnsEndpointLister(context.TODO(), "ns1")
-	obj, err := lister(metav1.ListOptions{})
+	lister := dnsEndpointLister("ns1")
+	obj, err := lister(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		t.Fatalf("dnsEndpointLister returned error: %v", err)
 	}

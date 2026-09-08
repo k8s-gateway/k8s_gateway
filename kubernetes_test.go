@@ -635,8 +635,8 @@ func TestServiceLabelSelector(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			client := fake.NewClientset(service1, service2, service3)
 
-			lister := serviceLister(ctx, client, core.NamespaceAll, tc.selector)
-			result, err := lister(metav1.ListOptions{})
+			lister := serviceLister(client, core.NamespaceAll, tc.selector)
+			result, err := lister(ctx, metav1.ListOptions{})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

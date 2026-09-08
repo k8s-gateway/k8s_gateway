@@ -51,8 +51,8 @@ func initializeDNSEndpointController(ctx context.Context, ctrl *KubeController, 
 
 	dnsEndpointController := cache.NewSharedIndexInformer(
 		&cache.ListWatch{
-			WatchFunc: dnsEndpointWatcher(ctx, ""),
-			ListFunc:  dnsEndpointLister(ctx, ""),
+			WatchFuncWithContext: dnsEndpointWatcher(""),
+			ListWithContextFunc:  dnsEndpointLister(""),
 		},
 		&externaldnsv1.DNSEndpoint{},
 		defaultResyncPeriod,
@@ -63,8 +63,8 @@ func initializeDNSEndpointController(ctx context.Context, ctrl *KubeController, 
 	log.Infof("DNSEndpoint controller initialized")
 }
 
-func dnsEndpointWatcher(ctx context.Context, ns string) func(metav1.ListOptions) (watch.Interface, error) {
-	return func(opts metav1.ListOptions) (watch.Interface, error) {
+func dnsEndpointWatcher(ns string) func(context.Context, metav1.ListOptions) (watch.Interface, error) {
+	return func(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 		opts.Watch = true
 		return externaldnsCRDClient.Get().
 			Resource("dnsendpoints").
@@ -74,8 +74,8 @@ func dnsEndpointWatcher(ctx context.Context, ns string) func(metav1.ListOptions)
 	}
 }
 
-func dnsEndpointLister(ctx context.Context, ns string) func(metav1.ListOptions) (runtime.Object, error) {
-	return func(opts metav1.ListOptions) (runtime.Object, error) {
+func dnsEndpointLister(ns string) func(context.Context, metav1.ListOptions) (runtime.Object, error) {
+	return func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
 		return externaldnsCRDClient.Get().
 			Resource("dnsendpoints").
 			Namespace(ns).
