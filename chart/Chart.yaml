@@ -2,15 +2,20 @@ apiVersion: v2
 name: k8s-gateway
 description: A Helm chart for the k8s_gateway CoreDNS plugin
 type: application
-version: 3.7.2
-appVersion: 1.8.0
-home: https://github.com/k8s-gateway/k8s_gateway
+version: 3.7.3
+appVersion: 1.8.3
+home: https://codeberg.org/k8s-gateway/k8s_gateway
 sources:
   - https://github.com/k8s-gateway/k8s_gateway
+  - https://codeberg.org/k8s-gateway/k8s_gateway
 maintainers:
   - url: https://codeberg.org/kryptonian
     name: kryptonian
 annotations:
   artifacthub.io/changes: |
-    - kind: added
-      description: RBAC permission to list/watch discovery.k8s.io/endpointslices for opt-in endpoint resolution
+    - kind: changed
+      description: Chart metadata to point to codeberg
+    - kind: changed
+      description: Updated appVersion
+    - kind: fixed
+      description: Image tag now falls back to the chart's appVersion when image.tag is unset

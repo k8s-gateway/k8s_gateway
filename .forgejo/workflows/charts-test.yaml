@@ -19,7 +19,8 @@ on:
         default: "[]"
 
 env:
-  HELM_VERSION: 3.17.2
+  HELM_VERSION: 3.19.0 # unittest doesn't support v4
+  HELM_UNITTEST_VERSION: 1.1.2
 
 jobs:
   install-chart:
@@ -29,7 +30,8 @@ jobs:
     strategy:
       matrix:
         chart: ${{ fromJSON(inputs.chartsToTest) }}
-        k8s_version: ["v1.32.3"]
+        k8s_version: ["v1.35.0"]
+        k3s_version: ["v1.35"]
       fail-fast: false
     steps:
       - name: Checkout
@@ -66,7 +68,7 @@ jobs:
       - name: Create k3d cluster
         uses: https://github.com/nolar/setup-k3d-k3s@v1
         with:
-          version: ${{ matrix.k8s_version }}
+          channel: ${{ matrix.k3s_version }}
 
       - name: Remove node taints
         run: |
@@ -112,7 +114,7 @@ jobs:
 
       - name: Run tests
         run: |
-          helm plugin install https://github.com/helm-unittest/helm-unittest --version 0.8.1
+          helm plugin install https://github.com/helm-unittest/helm-unittest --version "${{ env.HELM_UNITTEST_VERSION }}"
           helm dep update "${{ matrix.chart }}"
           helm unittest "${{ matrix.chart }}"
 

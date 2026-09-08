@@ -1,7 +1,7 @@
 image:
-  registry: ghcr.io
+  registry: codeberg.org
   repository: k8s-gateway/k8s_gateway
-  tag: 1.7.0
+  # tag:
   pullPolicy: IfNotPresent
 
 # Reference to one or more secrets to be used when pulling images.

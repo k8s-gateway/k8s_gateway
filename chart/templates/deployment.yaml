@@ -32,7 +32,7 @@ spec:
       serviceAccountName: {{ include "k8s-gateway.serviceAccountName" . }}
       containers:
       - name: {{ .Chart.Name }}
-        image: "{{- if .Values.image.registry }}{{ .Values.image.registry }}/{{- end }}{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        image: "{{- if .Values.image.registry }}{{ .Values.image.registry }}/{{- end }}{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         args: [ "-conf", "/etc/coredns/Corefile" ]
         securityContext:
