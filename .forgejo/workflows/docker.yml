@@ -24,7 +24,7 @@ enable-openid-connect: true
 
 jobs:
   build:
-    if: ${{ github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v') }}
+    if: ${{ github.event_name != 'release' || startsWith(github.ref_name, 'v') }}
     name: Build (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -74,6 +74,7 @@ jobs:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
           images: codeberg.org/${{ github.repository }}
+          flavor: latest=false
           tags: |
             type=ref,event=branch,suffix=-${{ matrix.platform }}
             type=ref,event=pr,suffix=-${{ matrix.platform }}
@@ -173,6 +174,7 @@ jobs:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
           images: codeberg.org/${{ github.repository }}
+          flavor: latest=false
           tags: |
             type=ref,event=branch
             type=ref,event=pr
