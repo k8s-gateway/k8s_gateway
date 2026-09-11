@@ -62,12 +62,12 @@ jobs:
           fetch-depth: 0
 
       - name: Verify chart version
-        uses: https://github.com/bjw-s/helm-charts-actions/verify-chart-version@2025.2.0
+        uses: https://github.com/bjw-s/helm-charts-actions/verify-chart-version@2025.10.0
         with:
           chart: chart
 
       - name: Verify chart changelog
-        uses: https://github.com/bjw-s/helm-charts-actions/verify-chart-changelog@2025.2.0
+        uses: https://github.com/bjw-s/helm-charts-actions/verify-chart-changelog@2025.10.0
         if: ${{ !startsWith(github.head_ref, 'renovate/') }}
         with:
           chart: chart
