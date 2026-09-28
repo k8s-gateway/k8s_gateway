@@ -41,7 +41,7 @@ func TestController(t *testing.T) {
 		if !isFound(index, found) {
 			t.Errorf("Ingress key %s not found in index: %v", index, found)
 		}
-		ips := fetchIngressLoadBalancerIPs(testObj.Status.LoadBalancer.Ingress)
+		ips := fetchIngressLoadBalancerIPs(testObj.Status.LoadBalancer.Ingress, loadBalancerAddressPreferenceHostname)
 		if len(ips) != 1 {
 			t.Errorf("Unexpected number of IPs found %d", len(ips))
 		}
@@ -61,7 +61,7 @@ func TestController(t *testing.T) {
 				t.Errorf("Service key %s not found in index: %v", idx, found)
 			}
 		}
-		ips := fetchServiceLoadBalancerIPs(testObj.Status.LoadBalancer.Ingress)
+		ips := fetchServiceLoadBalancerIPs(testObj.Status.LoadBalancer.Ingress, loadBalancerAddressPreferenceHostname)
 		if len(ips) != 1 {
 			t.Errorf("Unexpected number of IPs found %d", len(ips))
 		}
@@ -79,6 +79,36 @@ func TestController(t *testing.T) {
 		if len(found) != 0 {
 			t.Errorf("Unexpected non-empty service hostnames %v for invalid annotation: %v", found, testObj.Annotations)
 		}
+	}
+}
+
+func TestFetchLoadBalancerIPsAddressPreference(t *testing.T) {
+	serviceIngresses := []core.LoadBalancerIngress{
+		{Hostname: "does-not-resolve.invalid", IP: "192.0.2.10"},
+	}
+	if ips := fetchServiceLoadBalancerIPs(serviceIngresses, loadBalancerAddressPreferenceHostname); len(ips) != 0 {
+		t.Errorf("Expected hostname-first service lookup to return no addresses, got: %v", ips)
+	}
+	ips := fetchServiceLoadBalancerIPs(serviceIngresses, loadBalancerAddressPreferenceIP)
+	if len(ips) != 1 || ips[0].String() != "192.0.2.10" {
+		t.Errorf("Expected [192.0.2.10] from IP-preferred service load balancer status, got: %v", ips)
+	}
+	if ips := fetchServiceLoadBalancerIPs([]core.LoadBalancerIngress{{Hostname: "localhost", IP: "not-an-ip"}}, loadBalancerAddressPreferenceIP); len(ips) == 0 {
+		t.Error("Expected IP-preferred service lookup to fall back to hostname")
+	}
+
+	ingressIngresses := []networking.IngressLoadBalancerIngress{
+		{Hostname: "does-not-resolve.invalid", IP: "192.0.2.20"},
+	}
+	if ips := fetchIngressLoadBalancerIPs(ingressIngresses, loadBalancerAddressPreferenceHostname); len(ips) != 0 {
+		t.Errorf("Expected hostname-first ingress lookup to return no addresses, got: %v", ips)
+	}
+	ips = fetchIngressLoadBalancerIPs(ingressIngresses, loadBalancerAddressPreferenceIP)
+	if len(ips) != 1 || ips[0].String() != "192.0.2.20" {
+		t.Errorf("Expected [192.0.2.20] from IP-preferred ingress load balancer status, got: %v", ips)
+	}
+	if ips := fetchIngressLoadBalancerIPs([]networking.IngressLoadBalancerIngress{{Hostname: "localhost", IP: "not-an-ip"}}, loadBalancerAddressPreferenceIP); len(ips) == 0 {
+		t.Error("Expected IP-preferred ingress lookup to fall back to hostname")
 	}
 }
 
@@ -751,7 +781,7 @@ func TestMultiSelectorServiceLookup(t *testing.T) {
 	})
 	endpointSliceInformer := &fakeSharedIndexInformer{indexer: endpointSliceIndexer}
 
-	lookup := lookupServiceIndex(controllers, endpointSliceInformer)
+	lookup := lookupServiceIndex(controllers, endpointSliceInformer, loadBalancerAddressPreferenceHostname)
 
 	t.Run("union of disjoint selectors returns both services", func(t *testing.T) {
 		results1, _ := lookup([]string{"service1.example.com"})
@@ -962,6 +992,7 @@ func TestLookupServiceIndexResolvesEndpoints(t *testing.T) {
 	lookup := lookupServiceIndex(
 		[]cache.SharedIndexInformer{&fakeSharedIndexInformer{indexer: serviceIndexer}},
 		&fakeSharedIndexInformer{indexer: endpointSliceIndexer},
+		loadBalancerAddressPreferenceHostname,
 	)
 
 	// Default hostname for an opted-in service is name.namespace.

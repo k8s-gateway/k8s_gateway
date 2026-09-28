@@ -15,6 +15,9 @@ imagePullSecrets: []
 # Delegated domain
 domain: ""
 
+# Prefer the hostname or IP in LoadBalancer status entries
+loadBalancerAddressPreference: hostname
+
 # Optional scheme for DNS server (e.g., "tls://", "https://", "grpc://")
 # Used to enable DoT (DNS over TLS), DoH (DNS over HTTPS), or gRPC protocols
 # Leave empty for standard DNS

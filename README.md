@@ -60,6 +60,7 @@ k8s_gateway [ZONES...]
     ingressClasses [CLASSES...]
     gatewayClasses [CLASSES...]
     serviceLabelSelectors SELECTOR [SELECTOR...]
+    loadBalancerAddressPreference hostname|ip
     ttl TTL
     apex APEX
     secondary SECONDARY
@@ -72,6 +73,21 @@ k8s_gateway [ZONES...]
 * `ingressClasses` to filter `Ingress` resources by `ingressClassName` values. Watches all by default.
 * `gatewayClasses` to filter `Gateway` resources by `gatewayClassName` values. Watches all by default.
 * `serviceLabelSelectors` to filter `Service` resources by labels using one or more [Kubernetes label selector](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors) strings. Each selector creates a separate watch; results are merged. Watches all by default.
+* `loadBalancerAddressPreference` accepts the lowercase values `hostname` and `ip`. It applies only to `Service` and `Ingress` LoadBalancer status entries. An entry can contain both a hostname and an IP.
+  * `hostname` is the default. When an entry has a hostname, `k8s_gateway` uses its DNS lookup results and does not use the IP if the lookup fails. It uses the IP when the hostname is absent.
+  * `ip` uses a valid IP when one is present. If the IP is absent or invalid, `k8s_gateway` resolves the hostname instead.
+
+  For example, this status has an unresolvable hostname and a usable IP:
+
+  ```yaml
+  status:
+    loadBalancer:
+      ingress:
+        - hostname: lb.example.invalid
+          ip: 10.0.0.10
+  ```
+
+  With the default, `k8s_gateway` gets no address from this entry because the hostname does not resolve, even though the IP is usable. Keep `hostname` when the hostname resolves from the environment where `k8s_gateway` runs and you want to use the address DNS returns. Choose `ip` when a valid IP is present but the hostname does not resolve where `k8s_gateway` runs, or when you want the status IP to take precedence. Whether clients can reach the selected IP depends on their network. The Corefile example below shows how to opt in.
 * `ttl` can be used to override the default TTL value of 60 seconds.
 * `apex` can be used to override the default apex record value of `{ReleaseName}-k8s-gateway.{Namespace}`
 * `secondary` can be used to specify the optional apex record value of a peer nameserver running in the cluster (see `Dual Nameserver Deployment` section below).
@@ -82,7 +98,8 @@ Example:
 
 ```
 k8s_gateway example.com {
-    resources Ingress
+    resources Ingress Service
+    loadBalancerAddressPreference ip
     ttl 30
     apex exdns-1-k8s-gateway.kube-system
     secondary exdns-2-k8s-gateway.kube-system

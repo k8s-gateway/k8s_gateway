@@ -15,6 +15,13 @@ import (
 
 type lookupFunc func(indexKeys []string) (results []netip.Addr, raws []string)
 
+type loadBalancerAddressPreference string
+
+const (
+	loadBalancerAddressPreferenceHostname loadBalancerAddressPreference = "hostname"
+	loadBalancerAddressPreferenceIP       loadBalancerAddressPreference = "ip"
+)
+
 type resourceWithIndex struct {
 	name   string
 	lookup lookupFunc
@@ -43,21 +50,22 @@ var (
 
 // Gateway stores all runtime configuration of a plugin
 type Gateway struct {
-	Next                plugin.Handler
-	Zones               []string
-	Resources           []*resourceWithIndex
-	ConfiguredResources []*string
-	ttlLow              uint32
-	ttlSOA              uint32
-	Controller          *KubeController
-	apex                string
-	hostmaster          string
-	secondNS            string
-	configFile          string
-	configContext       string
-	nodeAddressType     string
-	ExternalAddrFunc    func(request.Request) []dns.RR
-	resourceFilters     ResourceFilters
+	Next                          plugin.Handler
+	Zones                         []string
+	Resources                     []*resourceWithIndex
+	ConfiguredResources           []*string
+	ttlLow                        uint32
+	ttlSOA                        uint32
+	Controller                    *KubeController
+	apex                          string
+	hostmaster                    string
+	secondNS                      string
+	configFile                    string
+	configContext                 string
+	nodeAddressType               string
+	loadBalancerAddressPreference loadBalancerAddressPreference
+	ExternalAddrFunc              func(request.Request) []dns.RR
+	resourceFilters               ResourceFilters
 
 	Fall fall.F
 }
@@ -78,14 +86,15 @@ func newGateway() *Gateway {
 		resources[i] = &clone
 	}
 	return &Gateway{
-		Resources:           resources,
-		ConfiguredResources: []*string{},
-		ttlLow:              ttlDefault,
-		ttlSOA:              ttlSOA,
-		apex:                defaultApex,
-		secondNS:            defaultSecondNS,
-		hostmaster:          defaultHostmaster,
-		nodeAddressType:     "InternalIP",
+		Resources:                     resources,
+		ConfiguredResources:           []*string{},
+		ttlLow:                        ttlDefault,
+		ttlSOA:                        ttlSOA,
+		apex:                          defaultApex,
+		secondNS:                      defaultSecondNS,
+		hostmaster:                    defaultHostmaster,
+		nodeAddressType:               "InternalIP",
+		loadBalancerAddressPreference: loadBalancerAddressPreferenceHostname,
 	}
 }
 

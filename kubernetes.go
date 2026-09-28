@@ -124,7 +124,7 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 						defaultResyncPeriod,
 						cache.Indexers{ingressHostnameIndex: ingressHostnameIndexFunc},
 					)
-					resource.lookup = lookupIngressIndex(ingressController, originalGateway.resourceFilters.ingressClasses)
+					resource.lookup = lookupIngressIndex(ingressController, originalGateway.resourceFilters.ingressClasses, originalGateway.loadBalancerAddressPreference)
 					ctrl.controllers = append(ctrl.controllers, ingressController)
 					log.Infof("Ingress controller initialized")
 
@@ -159,7 +159,7 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 					)
 					ctrl.controllers = append(ctrl.controllers, endpointSliceController)
 
-					resource.lookup = lookupServiceIndex(serviceControllers, endpointSliceController)
+					resource.lookup = lookupServiceIndex(serviceControllers, endpointSliceController, originalGateway.loadBalancerAddressPreference)
 					log.Infof("Service controller initialized")
 				}
 			}
@@ -638,7 +638,7 @@ func checkDomainValid(domain string) bool {
 	return false
 }
 
-func lookupServiceIndex(controllers []cache.SharedIndexInformer, endpointSliceController cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string) {
+func lookupServiceIndex(controllers []cache.SharedIndexInformer, endpointSliceController cache.SharedIndexInformer, preference loadBalancerAddressPreference) func([]string) (results []netip.Addr, raws []string) {
 	return func(indexKeys []string) (result []netip.Addr, raw []string) {
 		seen := make(map[string]struct{})
 		var objs []interface{}
@@ -676,7 +676,7 @@ func lookupServiceIndex(controllers []cache.SharedIndexInformer, endpointSliceCo
 				return
 			}
 
-			result = append(result, fetchServiceLoadBalancerIPs(service.Status.LoadBalancer.Ingress)...)
+			result = append(result, fetchServiceLoadBalancerIPs(service.Status.LoadBalancer.Ingress, preference)...)
 		}
 		return
 	}
@@ -791,7 +791,7 @@ func lookupGateways(gw cache.SharedIndexInformer, refs []gatewayapi_v1.ParentRef
 	return
 }
 
-func lookupIngressIndex(ctrl cache.SharedIndexInformer, ingclasses []string) func([]string) (results []netip.Addr, raws []string) {
+func lookupIngressIndex(ctrl cache.SharedIndexInformer, ingclasses []string, preference loadBalancerAddressPreference) func([]string) (results []netip.Addr, raws []string) {
 	return func(indexKeys []string) (result []netip.Addr, raw []string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
@@ -807,7 +807,7 @@ func lookupIngressIndex(ctrl cache.SharedIndexInformer, ingclasses []string) fun
 				continue
 			}
 
-			result = append(result, fetchIngressLoadBalancerIPs(ingress.Status.LoadBalancer.Ingress)...)
+			result = append(result, fetchIngressLoadBalancerIPs(ingress.Status.LoadBalancer.Ingress, preference)...)
 		}
 
 		return
@@ -842,56 +842,53 @@ func fetchGatewayIPs(gw *gatewayapi_v1.Gateway) (results []netip.Addr) {
 	return
 }
 
-func fetchServiceLoadBalancerIPs(ingresses []core.LoadBalancerIngress) (results []netip.Addr) {
+func fetchServiceLoadBalancerIPs(ingresses []core.LoadBalancerIngress, preference loadBalancerAddressPreference) (results []netip.Addr) {
 	for _, address := range ingresses {
-		if address.Hostname != "" {
-			log.Debugf("Looking up hostname %s", address.Hostname)
-			ips, err := net.LookupIP(address.Hostname)
-			if err != nil {
-				continue
-			}
-			for _, ip := range ips {
-				addr, err := netip.ParseAddr(ip.String())
-				if err != nil {
-					continue
-				}
-				results = append(results, addr)
-			}
-		} else if address.IP != "" {
-			addr, err := netip.ParseAddr(address.IP)
-			if err != nil {
-				continue
-			}
-			results = append(results, addr)
-		}
+		results = append(results, fetchLoadBalancerAddress(address.Hostname, address.IP, preference)...)
 	}
 	return
 }
 
-func fetchIngressLoadBalancerIPs(ingresses []networking.IngressLoadBalancerIngress) (results []netip.Addr) {
+func fetchIngressLoadBalancerIPs(ingresses []networking.IngressLoadBalancerIngress, preference loadBalancerAddressPreference) (results []netip.Addr) {
 	for _, address := range ingresses {
-		if address.Hostname != "" {
-			log.Debugf("Looking up hostname %s", address.Hostname)
-			ips, err := net.LookupIP(address.Hostname)
-			if err != nil {
-				continue
-			}
-			for _, ip := range ips {
-				addr, err := netip.ParseAddr(ip.String())
-				if err != nil {
-					continue
-				}
-				results = append(results, addr)
-			}
-		} else if address.IP != "" {
-			addr, err := netip.ParseAddr(address.IP)
-			if err != nil {
-				continue
-			}
+		results = append(results, fetchLoadBalancerAddress(address.Hostname, address.IP, preference)...)
+	}
+	return
+}
+
+func fetchLoadBalancerAddress(hostname, ip string, preference loadBalancerAddressPreference) (results []netip.Addr) {
+	if preference == loadBalancerAddressPreferenceIP {
+		if addr, err := netip.ParseAddr(ip); err == nil {
+			return []netip.Addr{addr}
+		}
+		return lookupLoadBalancerHostname(hostname)
+	}
+
+	if hostname != "" {
+		return lookupLoadBalancerHostname(hostname)
+	}
+	if addr, err := netip.ParseAddr(ip); err == nil {
+		return []netip.Addr{addr}
+	}
+	return nil
+}
+
+func lookupLoadBalancerHostname(hostname string) (results []netip.Addr) {
+	if hostname == "" {
+		return nil
+	}
+	log.Debugf("Looking up hostname %s", hostname)
+	ips, err := net.LookupIP(hostname)
+	if err != nil {
+		return nil
+	}
+	for _, ip := range ips {
+		addr, err := netip.ParseAddr(ip.String())
+		if err == nil {
 			results = append(results, addr)
 		}
 	}
-	return
+	return results
 }
 
 // the below is borrowed from k/k's GitHub repo

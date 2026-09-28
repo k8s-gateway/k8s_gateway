@@ -41,6 +41,81 @@ func TestSetup(t *testing.T) {
 	}
 }
 
+func TestLoadBalancerAddressPreferenceParsing(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		shouldErr   bool
+		expectedErr string
+		expected    loadBalancerAddressPreference
+	}{
+		{
+			name:     "hostname by default",
+			input:    `k8s_gateway example.org`,
+			expected: loadBalancerAddressPreferenceHostname,
+		},
+		{
+			name: "hostname",
+			input: `k8s_gateway example.org {
+	loadBalancerAddressPreference hostname
+}`,
+			expected: loadBalancerAddressPreferenceHostname,
+		},
+		{
+			name: "ip",
+			input: `k8s_gateway example.org {
+	loadBalancerAddressPreference ip
+}`,
+			expected: loadBalancerAddressPreferenceIP,
+		},
+		{
+			name: "missing argument",
+			input: `k8s_gateway example.org {
+	loadBalancerAddressPreference
+}`,
+			shouldErr:   true,
+			expectedErr: "requires exactly one argument",
+		},
+		{
+			name: "extra argument",
+			input: `k8s_gateway example.org {
+	loadBalancerAddressPreference hostname ip
+}`,
+			shouldErr:   true,
+			expectedErr: "requires exactly one argument",
+		},
+		{
+			name: "invalid argument",
+			input: `k8s_gateway example.org {
+	loadBalancerAddressPreference IP
+}`,
+			shouldErr:   true,
+			expectedErr: "must be 'hostname' or 'ip'",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			gw, err := parse(caddy.NewTestController("dns", test.input))
+			if test.shouldErr {
+				if err == nil {
+					t.Fatal("expected parse error")
+				}
+				if !strings.Contains(err.Error(), test.expectedErr) {
+					t.Fatalf("expected parse error containing %q, got %v", test.expectedErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected parse error: %v", err)
+			}
+			if gw.loadBalancerAddressPreference != test.expected {
+				t.Errorf("loadBalancerAddressPreference = %v, want %v", gw.loadBalancerAddressPreference, test.expected)
+			}
+		})
+	}
+}
+
 func TestServiceLabelSelectorParsing(t *testing.T) {
 	tests := []struct {
 		input             string

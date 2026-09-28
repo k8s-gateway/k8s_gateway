@@ -2,6 +2,55 @@
 suite: Configmap
 
 tests:
+  - it: Should omit loadBalancerAddressPreference hostname by default
+    set:
+      domain: "example.com"
+    template: templates/configmap.yaml
+    asserts:
+      - notMatchRegex:
+          path: data.Corefile
+          pattern: "loadBalancerAddressPreference"
+
+  - it: Should omit loadBalancerAddressPreference when null
+    set:
+      domain: "example.com"
+      loadBalancerAddressPreference: null
+    template: templates/configmap.yaml
+    asserts:
+      - notMatchRegex:
+          path: data.Corefile
+          pattern: "loadBalancerAddressPreference"
+
+  - it: Should render loadBalancerAddressPreference ip when set
+    set:
+      domain: "example.com"
+      loadBalancerAddressPreference: ip
+    template: templates/configmap.yaml
+    asserts:
+      - matchRegex:
+          path: data.Corefile
+          pattern: "loadBalancerAddressPreference ip"
+
+  - it: Should keep rendering malformed loadBalancerAddressPreference values
+    set:
+      domain: "example.com"
+      loadBalancerAddressPreference: invalid
+    template: templates/configmap.yaml
+    asserts:
+      - matchRegex:
+          path: data.Corefile
+          pattern: "loadBalancerAddressPreference invalid"
+
+  - it: Should keep rendering an empty loadBalancerAddressPreference value
+    set:
+      domain: "example.com"
+      loadBalancerAddressPreference: ""
+    template: templates/configmap.yaml
+    asserts:
+      - matchRegex:
+          path: data.Corefile
+          pattern: "loadBalancerAddressPreference\\s+ttl 300"
+
   - it: Should render ConfigMap with debug and dnsChallenge
     set:
       debug.enabled: true

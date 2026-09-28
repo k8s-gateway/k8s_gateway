@@ -9,6 +9,7 @@ The following table lists the configurable parameters of the k8s_gateway chart a
 | Parameter                        | Description                                                                               | Default               |
 | -------------------------------- | ----------------------------------------------------------------------------------------- | --------------------- |
 | `domain`                         | Delegated domain(s)                                                                       |                       |
+| `loadBalancerAddressPreference`  | Keep `hostname` to use the address DNS returns; choose `ip` to prefer the status IP. See [the full explanation in the main README](../README.md#configure). | `hostname`            |
 | `scheme`                         | Optional scheme for DNS server (e.g., `tls://`, `https://`, `grpc://`) to enable DoT/DoH/gRPC | `""`              |
 | `customLabels`                   | Labels to apply to all resources                                                          | `{}`                  |
 | `podAnnotations`                 | Annotations to apply to pods                                                              | `{}`                  |
@@ -22,10 +23,10 @@ The following table lists the configurable parameters of the k8s_gateway chart a
 | `dnsChallenge.enabled`           | Optional configuration option for DNS01 challenge                                         | `false`               |
 | `dnsChallenge.domain`            | See: <https://cert-manager.io/docs/configuration/acme/dns01/>                             | `dns01.clouddns.com`  |
 | `extraZonePlugins`               | Optional extra plugins to be added to the zone, e.g. "forward . /etc/resolv.conf"         | `""`                  |
-| `image.registry`                 | Image registry                                                                            | `ghcr.io`             |
+| `image.registry`                 | Image registry                                                                            | `codeberg.org`        |
 | `image.repository`               | Image repository                                                                          | `k8s-gateway/k8s_gateway` |
-| `image.tag`                      | Image tag                                                                                 | `latest`              |
-| `image.pullPolicy`               | Image pull policy                                                                         | `Always`              |
+| `image.tag`                      | Image tag (uses the chart's `appVersion` when unset)                                      | `1.8.3`               |
+| `image.pullPolicy`               | Image pull policy                                                                         | `IfNotPresent`        |
 | `imagePullSecrets`               | Image pull secrets                                                                        | `[]`                  |
 | `podSecurityContext`             | Set Security Context for Pod                                                              | `{}`                  |
 | `securityContext`                | Set Security Context for the container                                                    | `{}`                  |
@@ -47,6 +48,8 @@ The following table lists the configurable parameters of the k8s_gateway chart a
 | `zoneFiles`                      | Inject few custom zone files                                                              | `[]`                  |
 | `extraVolumes`    | 	Add additional volumes to the workload (e.g., secrets) | `[]` |
 | `extraVolumeMounts`   | Define extra volume mounts for the workload containers (e.g., secrets) | `[]` |
+
+To use `loadBalancerAddressPreference: ip`, set `image.tag` to a build that supports the directive. The chart's default image version, `1.8.3`, does not support it. The default `hostname` setting works with that image because the chart omits the directive.
 
 ## Examples
 

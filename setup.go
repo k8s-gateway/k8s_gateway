@@ -62,6 +62,19 @@ func parse(c *caddy.Controller) (*Gateway, error) {
 
 		for c.NextBlock() {
 			switch c.Val() {
+			case "loadBalancerAddressPreference":
+				args := c.RemainingArgs()
+				if len(args) != 1 {
+					return nil, c.Errf("loadBalancerAddressPreference requires exactly one argument: 'hostname' or 'ip'")
+				}
+				switch args[0] {
+				case string(loadBalancerAddressPreferenceHostname):
+					gw.loadBalancerAddressPreference = loadBalancerAddressPreferenceHostname
+				case string(loadBalancerAddressPreferenceIP):
+					gw.loadBalancerAddressPreference = loadBalancerAddressPreferenceIP
+				default:
+					return nil, c.Errf("loadBalancerAddressPreference must be 'hostname' or 'ip', got: %s", args[0])
+				}
 			case "fallthrough":
 				gw.Fall.SetZonesFromArgs(c.RemainingArgs())
 			case "secondary":
