@@ -19,7 +19,7 @@ This plugin relies on its own connection to the k8s API server and doesn't share
 
 
 <a name="f1">1</a>: Currently supported version of GatewayAPI CRDs is v1.0.0+ experimental channel.</br>
-<a name="f2">2</a>: Gateway is a separate resource specified in the `spec.parentRefs` of HTTPRoute|TLSRoute|GRPCRoute.</br>
+<a name="f2">2</a>: A Gateway or ListenerSet is specified in the `spec.parentRefs` of HTTPRoute|TLSRoute|GRPCRoute. ListenerSets are resolved through their parent Gateway and use that Gateway's status addresses.</br>
 <a name="f3">3</a>: Resolves services of type LoadBalancer, plus any service that opts in to endpoint resolution (see footnote 5).</br>
 <a name="f4">4</a>: Requires external-dns CRDs</br>
 <a name="f5">5</a>: When a service carries the annotation `k8s-gateway.dns/resolve-endpoints: "true"`, its ready pod IPs from EndpointSlices are returned in place of the LoadBalancer IP. This works for any service type (LoadBalancer, ClusterIP, or headless `ClusterIP: None`).</br>
@@ -151,7 +151,7 @@ To monitor any of the resources `k8s_gateway` requires the following permissions
     - list
     - watch
   ```
-* **HTTPRoute, TLSRoute, GRPCRoute**
+* **HTTPRoute, TLSRoute, GRPCRoute, ListenerSet**
   ```yaml
   - apiGroups:
     - gateway.networking.k8s.io

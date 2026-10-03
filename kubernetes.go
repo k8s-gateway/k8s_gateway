@@ -33,6 +33,7 @@ const (
 	serviceHostnameIndex             = "serviceHostname"
 	endpointSliceServiceIndex        = "endpointSliceService"
 	gatewayUniqueIndex               = "gatewayIndex"
+	listenerSetUniqueIndex           = "listenerSetIndex"
 	httpRouteHostnameIndex           = "httpRouteHostname"
 	tlsRouteHostnameIndex            = "tlsRouteHostname"
 	grpcRouteHostnameIndex           = "grpcRouteHostname"
@@ -87,23 +88,38 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 		ctrl.controllers = append(ctrl.controllers, gatewayController)
 		log.Infof("GatewayAPI controller initialized")
 
+		var listenerSetController cache.SharedIndexInformer
+		if crdExists(apiextensionsClient, "listenersets.gateway.networking.k8s.io") {
+			listenerSetController = cache.NewSharedIndexInformer(
+				&cache.ListWatch{
+					ListWithContextFunc:  listenerSetLister(ctrl.gwClient, core.NamespaceAll),
+					WatchFuncWithContext: listenerSetWatcher(ctrl.gwClient, core.NamespaceAll),
+				},
+				&gatewayapi_v1.ListenerSet{},
+				defaultResyncPeriod,
+				cache.Indexers{listenerSetUniqueIndex: gatewayIndexFunc},
+			)
+			ctrl.controllers = append(ctrl.controllers, listenerSetController)
+			log.Infof("ListenerSet controller initialized")
+		}
+
 		if slices.Contains(configuredResources, "HTTPRoute") && crdExists(apiextensionsClient, "httproutes.gateway.networking.k8s.io") {
 			if resource := originalGateway.lookupResource("HTTPRoute"); resource != nil {
-				httpRouteController := initializeHTTPRouteController(ctx, ctrl, gatewayController, originalGateway)
+				httpRouteController := initializeHTTPRouteController(ctx, ctrl, gatewayController, listenerSetController, originalGateway)
 				ctrl.controllers = append(ctrl.controllers, httpRouteController)
 				log.Infof("HTTPRoute controller initialized")
 			}
 		}
 		if slices.Contains(configuredResources, "TLSRoute") && crdServesVersion(apiextensionsClient, "tlsroutes.gateway.networking.k8s.io", "v1") {
 			if resource := originalGateway.lookupResource("TLSRoute"); resource != nil {
-				tlsRouteController := initializeTLSRouteController(ctx, ctrl, gatewayController, originalGateway)
+				tlsRouteController := initializeTLSRouteController(ctx, ctrl, gatewayController, listenerSetController, originalGateway)
 				ctrl.controllers = append(ctrl.controllers, tlsRouteController)
 				log.Infof("TLSRoute controller initialized")
 			}
 		}
 		if slices.Contains(configuredResources, "GRPCRoute") && crdExists(apiextensionsClient, "grpcroutes.gateway.networking.k8s.io") {
 			if resource := originalGateway.lookupResource("GRPCRoute"); resource != nil {
-				grpcRouteController := initializeGRPCRouteController(ctx, ctrl, gatewayController, originalGateway)
+				grpcRouteController := initializeGRPCRouteController(ctx, ctrl, gatewayController, listenerSetController, originalGateway)
 				ctrl.controllers = append(ctrl.controllers, grpcRouteController)
 				log.Infof("GRPCRoute controller initialized")
 			}
@@ -188,7 +204,7 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 	return ctrl
 }
 
-func initializeHTTPRouteController(ctx context.Context, ctrl *KubeController, gatewayController cache.SharedIndexInformer, originalGateway *Gateway) cache.SharedIndexInformer {
+func initializeHTTPRouteController(ctx context.Context, ctrl *KubeController, gatewayController, listenerSetController cache.SharedIndexInformer, originalGateway *Gateway) cache.SharedIndexInformer {
 	httpRouteController := cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListWithContextFunc:  httpRouteLister(ctrl.gwClient, core.NamespaceAll),
@@ -201,12 +217,13 @@ func initializeHTTPRouteController(ctx context.Context, ctrl *KubeController, ga
 	originalGateway.lookupResource("HTTPRoute").lookup = lookupHttpRouteIndex(
 		httpRouteController,
 		gatewayController,
+		listenerSetController,
 		originalGateway.resourceFilters.gatewayClasses,
 	)
 	return httpRouteController
 }
 
-func initializeTLSRouteController(ctx context.Context, ctrl *KubeController, gatewaycontroller cache.SharedIndexInformer, originalGateway *Gateway) cache.SharedIndexInformer {
+func initializeTLSRouteController(ctx context.Context, ctrl *KubeController, gatewaycontroller, listenerSetController cache.SharedIndexInformer, originalGateway *Gateway) cache.SharedIndexInformer {
 	tlsRouteController := cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListWithContextFunc:  tlsRouteLister(ctrl.gwClient, core.NamespaceAll),
@@ -219,12 +236,13 @@ func initializeTLSRouteController(ctx context.Context, ctrl *KubeController, gat
 	originalGateway.lookupResource("TLSRoute").lookup = lookupTLSRouteIndex(
 		tlsRouteController,
 		gatewaycontroller,
+		listenerSetController,
 		originalGateway.resourceFilters.gatewayClasses,
 	)
 	return tlsRouteController
 }
 
-func initializeGRPCRouteController(ctx context.Context, ctrl *KubeController, gatewayController cache.SharedIndexInformer, originalGateway *Gateway) cache.SharedIndexInformer {
+func initializeGRPCRouteController(ctx context.Context, ctrl *KubeController, gatewayController, listenerSetController cache.SharedIndexInformer, originalGateway *Gateway) cache.SharedIndexInformer {
 	grpcRouteController := cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListWithContextFunc:  grpcRouteLister(ctrl.gwClient, core.NamespaceAll),
@@ -237,6 +255,7 @@ func initializeGRPCRouteController(ctx context.Context, ctrl *KubeController, ga
 	originalGateway.lookupResource("GRPCRoute").lookup = lookupGRPCRouteIndex(
 		grpcRouteController,
 		gatewayController,
+		listenerSetController,
 		originalGateway.resourceFilters.gatewayClasses,
 	)
 	return grpcRouteController
@@ -397,6 +416,12 @@ func gatewayLister(c gatewayClient.Interface, ns string) func(context.Context, m
 	}
 }
 
+func listenerSetLister(c gatewayClient.Interface, ns string) func(context.Context, metav1.ListOptions) (runtime.Object, error) {
+	return func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
+		return c.GatewayV1().ListenerSets(ns).List(ctx, opts)
+	}
+}
+
 func ingressLister(c kubernetes.Interface, ns string) func(context.Context, metav1.ListOptions) (runtime.Object, error) {
 	return func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
 		return c.NetworkingV1().Ingresses(ns).List(ctx, opts)
@@ -431,6 +456,12 @@ func grpcRouteWatcher(c gatewayClient.Interface, ns string) func(context.Context
 func gatewayWatcher(c gatewayClient.Interface, ns string) func(context.Context, metav1.ListOptions) (watch.Interface, error) {
 	return func(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 		return c.GatewayV1().Gateways(ns).Watch(ctx, opts)
+	}
+}
+
+func listenerSetWatcher(c gatewayClient.Interface, ns string) func(context.Context, metav1.ListOptions) (watch.Interface, error) {
+	return func(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
+		return c.GatewayV1().ListenerSets(ns).Watch(ctx, opts)
 	}
 }
 
@@ -715,7 +746,7 @@ func endpointSliceAddresses(endpointSliceController cache.SharedIndexInformer, s
 	return
 }
 
-func lookupHttpRouteIndex(http, gw cache.SharedIndexInformer, gwclasses []string) func([]string) (results []netip.Addr, raws []string) {
+func lookupHttpRouteIndex(http, gw, lset cache.SharedIndexInformer, gwclasses []string) func([]string) (results []netip.Addr, raws []string) {
 	return func(indexKeys []string) (result []netip.Addr, raw []string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
@@ -726,13 +757,13 @@ func lookupHttpRouteIndex(http, gw cache.SharedIndexInformer, gwclasses []string
 
 		for _, obj := range objs {
 			httpRoute, _ := obj.(*gatewayapi_v1.HTTPRoute)
-			result = append(result, lookupGateways(gw, httpRoute.Spec.ParentRefs, httpRoute.Namespace, gwclasses)...)
+			result = append(result, lookupParentRefs(gw, lset, httpRoute.Spec.ParentRefs, httpRoute.Namespace, gwclasses)...)
 		}
 		return
 	}
 }
 
-func lookupTLSRouteIndex(tls, gw cache.SharedIndexInformer, gwclasses []string) func([]string) (results []netip.Addr, raws []string) {
+func lookupTLSRouteIndex(tls, gw, lset cache.SharedIndexInformer, gwclasses []string) func([]string) (results []netip.Addr, raws []string) {
 	return func(indexKeys []string) (result []netip.Addr, raw []string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
@@ -743,13 +774,13 @@ func lookupTLSRouteIndex(tls, gw cache.SharedIndexInformer, gwclasses []string) 
 
 		for _, obj := range objs {
 			tlsRoute, _ := obj.(*gatewayapi_v1.TLSRoute)
-			result = append(result, lookupGateways(gw, tlsRoute.Spec.ParentRefs, tlsRoute.Namespace, gwclasses)...)
+			result = append(result, lookupParentRefs(gw, lset, tlsRoute.Spec.ParentRefs, tlsRoute.Namespace, gwclasses)...)
 		}
 		return
 	}
 }
 
-func lookupGRPCRouteIndex(grpc, gw cache.SharedIndexInformer, gwclasses []string) func([]string) (results []netip.Addr, raws []string) {
+func lookupGRPCRouteIndex(grpc, gw, lset cache.SharedIndexInformer, gwclasses []string) func([]string) (results []netip.Addr, raws []string) {
 	return func(indexKeys []string) (result []netip.Addr, raw []string) {
 		var objs []interface{}
 		for _, key := range indexKeys {
@@ -760,32 +791,60 @@ func lookupGRPCRouteIndex(grpc, gw cache.SharedIndexInformer, gwclasses []string
 
 		for _, obj := range objs {
 			grpcRoute, _ := obj.(*gatewayapi_v1.GRPCRoute)
-			result = append(result, lookupGateways(gw, grpcRoute.Spec.ParentRefs, grpcRoute.Namespace, gwclasses)...)
+			result = append(result, lookupParentRefs(gw, lset, grpcRoute.Spec.ParentRefs, grpcRoute.Namespace, gwclasses)...)
 		}
 		return
 	}
 }
 
-func lookupGateways(gw cache.SharedIndexInformer, refs []gatewayapi_v1.ParentReference, ns string, gwclasses []string) (result []netip.Addr) {
+func lookupParentRefs(gw, lset cache.SharedIndexInformer, refs []gatewayapi_v1.ParentReference, ns string, gwclasses []string) (result []netip.Addr) {
 	for _, gwRef := range refs {
 
+		parentNamespace := ns
 		if gwRef.Namespace != nil {
-			ns = string(*gwRef.Namespace)
+			parentNamespace = string(*gwRef.Namespace)
 		}
-		gwKey := fmt.Sprintf("%s/%s", ns, gwRef.Name)
+		parentKey := fmt.Sprintf("%s/%s", parentNamespace, gwRef.Name)
 
-		gwObjs, _ := gw.GetIndexer().ByIndex(gatewayUniqueIndex, gwKey)
+		parentKind := gatewayapi_v1.Kind("Gateway")
+		if gwRef.Kind != nil {
+			parentKind = *gwRef.Kind
+		}
+
+		if parentKind == gatewayapi_v1.Kind("ListenerSet") {
+			if lset == nil {
+				continue
+			}
+			listenerSetObjs, _ := lset.GetIndexer().ByIndex(listenerSetUniqueIndex, parentKey)
+			log.Debugf("Found %d matching ListenerSet objects", len(listenerSetObjs))
+			for _, obj := range listenerSetObjs {
+				listenerSet, ok := obj.(*gatewayapi_v1.ListenerSet)
+				if !ok {
+					continue
+				}
+				result = append(result, lookupParentRefs(gw, nil, []gatewayapi_v1.ParentReference{{
+					Name:      listenerSet.Spec.ParentRef.Name,
+					Namespace: listenerSet.Spec.ParentRef.Namespace,
+					Kind:      listenerSet.Spec.ParentRef.Kind,
+					Group:     listenerSet.Spec.ParentRef.Group,
+				}}, listenerSet.Namespace, gwclasses)...)
+			}
+			continue
+		}
+
+		gwObjs, _ := gw.GetIndexer().ByIndex(gatewayUniqueIndex, parentKey)
 		log.Debugf("Found %d matching gateway objects", len(gwObjs))
-
 		for _, gwObj := range gwObjs {
-			gw, _ := gwObj.(*gatewayapi_v1.Gateway)
-
-			if len(gwclasses) > 0 && !slices.Contains(gwclasses, string(gw.Spec.GatewayClassName)) {
-				log.Debugf("Skipping gateway of '%s' gatewayClass", string(gw.Spec.GatewayClassName))
+			gateway, ok := gwObj.(*gatewayapi_v1.Gateway)
+			if !ok {
 				continue
 			}
 
-			result = append(result, fetchGatewayIPs(gw)...)
+			if len(gwclasses) > 0 && !slices.Contains(gwclasses, string(gateway.Spec.GatewayClassName)) {
+				log.Debugf("Skipping gateway of '%s' gatewayClass", string(gateway.Spec.GatewayClassName))
+				continue
+			}
+			result = append(result, fetchGatewayIPs(gateway)...)
 		}
 	}
 	return

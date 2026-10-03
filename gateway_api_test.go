@@ -12,6 +12,8 @@ import (
 	"github.com/miekg/dns"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/utils/ptr"
 	gatewayapi_v1 "sigs.k8s.io/gateway-api/apis/v1"
 	gatewayapi_v1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 	gatewayClient "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned"
@@ -85,6 +87,7 @@ func TestGatewayAPIController(t *testing.T) {
 		gwClient:  gwClient,
 		hasSynced: true,
 	}
+
 	addGateways(gwClient)
 	addHTTPRoutes(gwClient)
 	addTLSRoutes(gwClient)
@@ -139,6 +142,53 @@ func TestGatewayAPIController(t *testing.T) {
 		if !isFoundInIndex(index, found) {
 			t.Errorf("Gateway key %s not found in index: %v", index, found)
 		}
+	}
+}
+
+func TestHTTPRouteCanUseListenerSetParent(t *testing.T) {
+	gatewayInformer := cache.NewSharedIndexInformer(
+		&cache.ListWatch{},
+		&gatewayapi_v1.Gateway{},
+		0,
+		cache.Indexers{gatewayUniqueIndex: gatewayIndexFunc},
+	)
+	listenerSetInformer := cache.NewSharedIndexInformer(
+		&cache.ListWatch{},
+		&gatewayapi_v1.ListenerSet{},
+		0,
+		cache.Indexers{listenerSetUniqueIndex: gatewayIndexFunc},
+	)
+
+	if err := gatewayInformer.GetIndexer().Add(&gatewayapi_v1.Gateway{
+		ObjectMeta: metav1.ObjectMeta{Name: "gw-1", Namespace: "ns1"},
+		Status: gatewayapi_v1.GatewayStatus{
+			Addresses: []gatewayapi_v1.GatewayStatusAddress{{
+				Type:  ptr.To(gatewayapi_v1.IPAddressType),
+				Value: "192.0.2.100",
+			}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := listenerSetInformer.GetIndexer().Add(&gatewayapi_v1.ListenerSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "ls-1", Namespace: "ns1"},
+		Spec: gatewayapi_v1.ListenerSetSpec{
+			ParentRef: gatewayapi_v1.ParentGatewayReference{Name: "gw-1"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	listenerSetKind := gatewayapi_v1.Kind("ListenerSet")
+	addresses := lookupParentRefs(
+		gatewayInformer,
+		listenerSetInformer,
+		[]gatewayapi_v1.ParentReference{{Name: "ls-1", Kind: &listenerSetKind}},
+		"ns1",
+		nil,
+	)
+	if len(addresses) != 1 || addresses[0].String() != "192.0.2.100" {
+		t.Fatalf("expected ListenerSet parent to resolve through Gateway, got %v", addresses)
 	}
 }
 
