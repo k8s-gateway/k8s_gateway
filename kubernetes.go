@@ -182,7 +182,9 @@ func newKubeController(ctx context.Context, c *kubernetes.Clientset, gw *gateway
 		}
 	}
 
-	initializeDNSEndpointController(ctx, ctrl, originalGateway)
+	if slices.Contains(dereferenceStrings(originalGateway.ConfiguredResources), "DNSEndpoint") {
+		initializeDNSEndpointController(ctx, ctrl, originalGateway)
+	}
 
 	if slices.Contains(dereferenceStrings(originalGateway.ConfiguredResources), "Node") {
 		if resource := originalGateway.lookupResource("Node"); resource != nil {
