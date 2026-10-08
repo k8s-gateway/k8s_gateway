@@ -4,7 +4,7 @@ kind: CiliumLoadBalancerIPPool
 metadata:
   name: default
 spec:
-  cidrs:
+  blocks:
     - cidr: 198.51.100.0/24
     - cidr: fd12:3456:789a:1::/64
 

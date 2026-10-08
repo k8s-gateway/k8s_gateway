@@ -4,400 +4,202 @@ A CoreDNS plugin that is very similar to [k8s_external](https://coredns.io/plugi
 
 This plugin relies on its own connection to the k8s API server and doesn't share any code with the existing [kubernetes](https://coredns.io/plugins/kubernetes/) plugin. The assumption is that this plugin can now be deployed as a separate instance (alongside the internal kube-dns) and act as a single external DNS interface into your Kubernetes cluster(s).
 
-## Description
+## Supported resources
 
-`k8s_gateway` resolves Kubernetes resources with their external IP addresses based on zones specified in the configuration. This plugin will resolve the following type of resources:
+| Kind | Names are taken from | Addresses are taken from |
+| ---- | -------------------- | ------------------------ |
+| Ingress | `spec.rules[*].host` | `.status.loadBalancer.ingress` |
+| Service | `name.namespace` plus the configured zones, or the `coredns.io/hostname` / `external-dns.alpha.kubernetes.io/hostname` annotations | `.status.loadBalancer.ingress`, or ready EndpointSlice addresses when endpoint resolution is enabled |
+| HTTPRoute | `spec.hostnames` and `spec.parentRefs` | The referenced Gateway's `status.addresses` |
+| TLSRoute | `spec.hostnames` and `spec.parentRefs` | The referenced Gateway's `status.addresses` |
+| GRPCRoute | `spec.hostnames` and `spec.parentRefs` | The referenced Gateway's `status.addresses` |
+| DNSEndpoint | `spec.endpoints[*].dnsName` | `spec.endpoints[*].targets` |
 
-| Kind | Matching Against | External IPs are from |
-| ---- | ---------------- | -------- |
-| HTTPRoute<sup>[1](#foot1)</sup> | all FQDNs from `spec.hostnames` matching configured zones | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
-| TLSRoute<sup>[1](#foot1) | all FQDNs from `spec.hostnames` matching configured zones | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
-| GRPCRoute<sup>[1](#foot1) | all FQDNs from `spec.hostnames` matching configured zones | `gateway.status.addresses`<sup>[2](#foot2)</sup> |
-| Ingress | all FQDNs from `spec.rules[*].host` matching configured zones | `.status.loadBalancer.ingress` |
-| Service<sup>[3](#foot3)</sup> | `name.namespace` + any of the configured zones OR any string consisting of lower case alphanumeric characters, '-' or '.', specified in the `coredns.io/hostname` or `external-dns.alpha.kubernetes.io/hostname` annotations (see [this](https://github.com/k8s-gateway/k8s_gateway/blob/master/test/single-stack/service-annotation.yml#L8) for an example) | `.status.loadBalancer.ingress` by default, or pod IPs from EndpointSlices when opted in<sup>[5](#f5)</sup> |
-| DNSEndpoint<sup>[4](#foot4)</sup> | `spec.endpoints[*].targets` | |
+> [!IMPORTANT] Gateway API routes require Gateway API CRDs v1.1.0 or newer from the experimental channel.
+> Currently, supports A and AAAA-type queries, all other queries result in NODATA responses.
 
+> This plugin is **NOT** supposed to be used for intra-cluster DNS resolution and does not contain the default upstream [kubernetes](https://coredns.io/plugins/kubernetes/) plugin.
 
-<a name="f1">1</a>: Currently supported version of GatewayAPI CRDs is v1.0.0+ experimental channel.</br>
-<a name="f2">2</a>: A Gateway or ListenerSet is specified in the `spec.parentRefs` of HTTPRoute|TLSRoute|GRPCRoute. ListenerSets are resolved through their parent Gateway and use that Gateway's status addresses.</br>
-<a name="f3">3</a>: Resolves services of type LoadBalancer, plus any service that opts in to endpoint resolution (see footnote 5).</br>
-<a name="f4">4</a>: Requires external-dns CRDs</br>
-<a name="f5">5</a>: When a service carries the annotation `k8s-gateway.dns/resolve-endpoints: "true"`, its ready pod IPs from EndpointSlices are returned in place of the LoadBalancer IP. This works for any service type (LoadBalancer, ClusterIP, or headless `ClusterIP: None`).</br>
+Every supported route can use a Gateway or a ListenerSet as its `spec.parentRefs` parent. ListenerSets are resolved through their parent Gateway, and the Gateway's `status.addresses` are used for DNS responses. TLSRoute and GRPCRoute require the `v1` API version. DNSEndpoint requires the external-dns CRDs.
 
-Currently, supports A and AAAA-type queries, all other queries result in NODATA responses.
+## Install with Helm
 
-This plugin is **NOT** supposed to be used for intra-cluster DNS resolution and does not contain the default upstream [kubernetes](https://coredns.io/plugins/kubernetes/) plugin.
+The supported deployment method is the Helm chart:
 
-## Install
-
-The recommended installation method is using the helm chart provided in the repo:
-
-```
-helm repo add k8s_gateway https://k8s-gateway.kryptonian.kapsi.fi/
-helm install exdns --set domain=foo k8s_gateway/k8s-gateway
+```bash
+helm install k8s-gateway oci://codeberg.org/k8s-gateway/charts/k8s-gateway
 ```
 
-Alternatively, for labbing and testing purposes `k8s_gateway` can be deployed with a single manifest:
+The chart creates the Deployment, Service, ServiceAccount, and resource-scoped RBAC required by the configured plugins. RBAC is controlled by `rbac.create`. The chart also supports HPA, PodDisruptionBudget, Prometheus ServiceMonitor, multiple protocols, probes, security contexts, and additional volumes.
 
+See [`chart/README.md`](chart/README.md) for the complete chart values table.
+
+## Chart configuration
+
+The chart uses CoreDNS server blocks. Configure the zones and plugins under `servers`; there are no chart-level `domain`, `watchedResources`, `filters`, `ttl`, or `apex` values.
+
+This is a minimal working `values.yaml`:
+
+```yaml
+servers:
+  - zones:
+      - zone: example.com
+    port: 53
+    plugins:
+      - name: errors
+      - name: health
+        configBlock: |-
+          lameduck 10s
+      - name: ready
+      - name: k8s_gateway
+        parameters: example.com
+        configBlock: |-
+          resources Ingress Service
+          loadBalancerAddressPreference ip
+      - name: forward
+        parameters: . /etc/resolv.conf
+      - name: cache
+        parameters: 30
+      - name: reload
+      - name: loadbalance
 ```
-kubectl apply -f https://raw.githubusercontent.com/k8s-gateway/k8s_gateway/master/examples/install-clusterwide.yml
-```
 
-## Configure
+Each server entry can define:
 
-The only required configuration option are the zones that plugin should be authoritative for:
+* `zones`: one or more zones. A zone can set `zone`, `scheme`, and `use_tcp`. Supported schemes are `dns://`, `tls://`, `https://`, and `grpc://`.
+* `port`: the listener port for that server block.
+* `plugins`: CoreDNS plugins. Each plugin supports `name`, optional
+  `parameters`, and optional `configBlock`.
 
-```
-k8s_gateway [ZONES...]
-```
+> [!WARNING] The plugin name is significant: the Kubernetes resource resolver must be configured exactly as `name: k8s_gateway`. Renaming this entry causes the chart to generate a CoreDNS configuration that does not load this plugin.
 
-Additional configuration options can be used to further customize the behaviour of a plugin:
+Chart-level settings include:
 
-```
-{
-k8s_gateway [ZONES...]
-    resources [RESOURCES...]
-    ingressClasses [CLASSES...]
-    gatewayClasses [CLASSES...]
-    serviceLabelSelectors SELECTOR [SELECTOR...]
-    loadBalancerAddressPreference hostname|ip
-    ttl TTL
-    apex APEX
-    secondary SECONDARY
-    kubeconfig KUBECONFIG [CONTEXT]
-    fallthrough [ZONES...]
-}
-```
+* `serviceType` and `service`: Service type and networking options.
+* `replicaCount`, `resources`, `affinity`, `nodeSelector`, `tolerations`, and `topologySpreadConstraints`: workload scheduling and sizing.
+* `serviceAccount` and `rbac`: identity and permissions.
+* `livenessProbe`, `readinessProbe`, `securityContext`, and `podSecurityContext`: pod health and security.
+* `prometheus.service` and `prometheus.monitor`: metrics Service and ServiceMonitor.
+* `hpa` and `podDisruptionBudget`: availability and scaling.
+* `extraConfig`, `zoneFiles`, `extraContainers`, `extraVolumes`, `extraVolumeMounts`, `extraSecrets`, `env`, and `initContainers`: additional CoreDNS or pod configuration.
 
-* `resources` a subset of supported Kubernetes resources to watch. Available options are `[ Ingress | Service | HTTPRoute | TLSRoute | GRPCRoute | DNSEndpoint ]`. If no resources are specified only `Ingress` and `Service` will be monitored
-* `ingressClasses` to filter `Ingress` resources by `ingressClassName` values. Watches all by default.
-* `gatewayClasses` to filter `Gateway` resources by `gatewayClassName` values. Watches all by default.
-* `serviceLabelSelectors` to filter `Service` resources by labels using one or more [Kubernetes label selector](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors) strings. Each selector creates a separate watch; results are merged. Watches all by default.
-* `loadBalancerAddressPreference` accepts the lowercase values `hostname` and `ip`. It applies only to `Service` and `Ingress` LoadBalancer status entries. An entry can contain both a hostname and an IP.
-  * `hostname` is the default. When an entry has a hostname, `k8s_gateway` uses its DNS lookup results and does not use the IP if the lookup fails. It uses the IP when the hostname is absent.
-  * `ip` uses a valid IP when one is present. If the IP is absent or invalid, `k8s_gateway` resolves the hostname instead.
+## `k8s_gateway` plugin configuration
 
-  For example, this status has an unresolvable hostname and a usable IP:
+The plugin is configured inside a server's `plugins` list. Keep the plugin name exactly `k8s_gateway`; changing it will prevent the plugin from working:
 
-  ```yaml
-  status:
-    loadBalancer:
-      ingress:
-        - hostname: lb.example.invalid
-          ip: 10.0.0.10
-  ```
-
-  With the default, `k8s_gateway` gets no address from this entry because the hostname does not resolve, even though the IP is usable. Keep `hostname` when the hostname resolves from the environment where `k8s_gateway` runs and you want to use the address DNS returns. Choose `ip` when a valid IP is present but the hostname does not resolve where `k8s_gateway` runs, or when you want the status IP to take precedence. Whether clients can reach the selected IP depends on their network. The Corefile example below shows how to opt in.
-* `ttl` can be used to override the default TTL value of 60 seconds.
-* `apex` can be used to override the default apex record value of `{ReleaseName}-k8s-gateway.{Namespace}`
-* `secondary` can be used to specify the optional apex record value of a peer nameserver running in the cluster (see `Dual Nameserver Deployment` section below).
-* `kubeconfig` can be used to connect to a remote Kubernetes cluster using a kubeconfig file. `CONTEXT` is optional, if not set, then the current context specified in kubeconfig will be used. It supports TLS, username and password, or token-based authentication.
-* `fallthrough` if zone matches and no record can be generated, pass request to the next plugin. If **[ZONES...]** is omitted, then fallthrough happens for all zones for which the plugin is authoritative. If specific zones are listed (for example `in-addr.arpa` and `ip6.arpa`), then only queries for those zones will be subject to fallthrough.
-
-Example:
-
-```
-k8s_gateway example.com {
-    resources Ingress Service
+```yaml
+- name: k8s_gateway
+  parameters: example.com
+  configBlock: |-
+    resources Ingress Service HTTPRoute
+    ingressClasses nginx
+    gatewayClasses external
+    serviceLabelSelectors app=public
     loadBalancerAddressPreference ip
-    ttl 30
-    apex exdns-1-k8s-gateway.kube-system
-    secondary exdns-2-k8s-gateway.kube-system
-    kubeconfig /.kube/config
-}
+    ttl 60
+    apex dns.example.com
+    secondary dns-secondary.example.com
+    fallthrough in-addr.arpa ip6.arpa
 ```
 
-### Required Kubernetes permissions
+The plugin parameters and directives are:
 
-To monitor any of the resources `k8s_gateway` requires the following permissions in the cluster. If you installed using either the Helm chart of the `install-clusterwide.yml` manifest, a `ClusterRole`, `ClusterRoleBinding`, and `ServiceAccount` will have been added to allow monitoring `Ingress` and `Service` resources.
+* `parameters`: authoritative zones, for example `example.com`.
+* `resources`: resources to watch: `Ingress`, `Service`, `HTTPRoute`, `TLSRoute`, `GRPCRoute`, and `DNSEndpoint`. If omitted, `Ingress` and `Service` are watched.
+* `ingressClasses`: restrict Ingresses by `ingressClassName`.
+* `gatewayClasses`: restrict Gateway API resources by `gatewayClassName`.
+* `serviceLabelSelectors`: one or more Kubernetes label selectors. Each selector creates a watch and the results are merged.
+* `loadBalancerAddressPreference`: `hostname` (default) or `ip`. This applies to Service and Ingress LoadBalancer status entries. `hostname` prefers a resolvable hostname; `ip` prefers a valid status IP and falls back to the hostname.
+* `ttl`: response TTL. The default is 60 seconds.
+* `apex`: overrides the generated apex record.
+* `secondary`: adds a peer nameserver apex record.
+* `kubeconfig`: path to a kubeconfig for a remote cluster, optionally followed by a context name.
+* `fallthrough`: passes unanswered queries to the next plugin. With no zones, it applies to every authoritative zone; with zones, it applies only to those zones.
 
-* **General CRDs**
-  ```yaml
-  - apiGroups:
-      - apiextensions.k8s.io
-    resources:
-      - customresourcedefinitions
-    verbs:
-      - get
-      - list
-      - watch
-  ```
-* **Ingress**
-  ```yaml
-  - apiGroups:
-    - extensions
-    - networking.k8s.io
-    resources:
-    - ingresses
-    verbs:
-    - list
-    - watch
-  ```
-* **Service** (the `endpointslices` permission is required so that services with the `resolve-endpoints` annotation can be resolved to pod IPs; see [Endpoint Resolution](#endpoint-resolution))
-  ```yaml
-  - apiGroups:
-    - ""
-    resources:
-    - services
-    - namespaces
-    verbs:
-    - list
-    - watch
-  - apiGroups:
-    - discovery.k8s.io
-    resources:
-    - endpointslices
-    verbs:
-    - list
-    - watch
-  ```
-* **HTTPRoute, TLSRoute, GRPCRoute, ListenerSet**
-  ```yaml
-  - apiGroups:
-    - gateway.networking.k8s.io
-    resources:
-    - "*"
-    verbs:
-    - watch
-    - list
-  ```
-* **DNSEndpoint**
-  ```yaml
-  - apiGroups:
-    - externaldns.k8s.io
-    resources:
-    - dnsendpoints
-    verbs:
-    - get
-    - watch
-    - list
-  - apiGroups:
-    - externaldns.k8s.io
-    resources:
-      - dnsendpoints/status
-    verbs:
-      - "*"
-  ```
+## Ignoring resources
 
-## Excluding Specific Resources
-
-In some cases, you may want to exclude specific Kubernetes resources from being processed by the `k8s_gateway` plugin. This can be useful when you have resources that should not be exposed via DNS or when you want to temporarily disable DNS resolution for certain objects.
-
-### Using the Ignore Label
-
-You can exclude any supported resource type by adding the `k8s-gateway.dns/ignore` label with the value `"true"` to the resource's metadata:
+Add `k8s-gateway.dns/ignore: "true"` to a supported resource to exclude it:
 
 ```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
 metadata:
-  name: my-ingress
   labels:
-    k8s-gateway.dns/ignore: "true"  # This ingress will be excluded from DNS resolution
-spec:
-  # ... rest of spec
+    k8s-gateway.dns/ignore: "true"
 ```
 
-This label works for all supported resource types:
-- **Ingress** resources
-- **Service** resources (of type LoadBalancer, or any service with the `resolve-endpoints` annotation)
-- **HTTPRoute** resources
-- **TLSRoute** resources
-- **GRPCRoute** resources
-- **DNSEndpoint** resources
+This works for Ingress, Service, HTTPRoute, TLSRoute, GRPCRoute, and DNSEndpoint resources.
 
-When a resource is excluded using this label, the plugin will not return it's address.
+## Endpoint resolution
 
-## Endpoint Resolution
-
-By default, when the `Service` resource is enabled, `k8s_gateway` resolves a Service to the IP(s) listed in `.status.loadBalancer.ingress`. Any Service can opt in to **endpoint resolution** instead by adding the annotation `k8s-gateway.dns/resolve-endpoints: "true"` — in that case the Service's ready pod IPs are returned from its EndpointSlices, regardless of Service type. This is typically used with headless services (`ClusterIP: None`) to expose StatefulSet pods or other workloads with stable network identities via DNS, but it works for any Service type.
-
-### Enabling Endpoint Resolution
-
-No additional Corefile option is needed — as long as `Service` is in your `resources` list (which is the default), annotated services are picked up automatically.
+Services normally resolve to `.status.loadBalancer.ingress`. To return ready pod addresses from EndpointSlices instead, add:
 
 ```yaml
-apiVersion: v1
-kind: Service
 metadata:
-  name: my-statefulset
-  namespace: default
   annotations:
     k8s-gateway.dns/resolve-endpoints: "true"
-spec:
-  clusterIP: None  # commonly headless, but not required
-  selector:
-    app: my-app
-  ports:
-    - port: 80
 ```
 
-When queried, `my-statefulset.default.example.com` will return all ready pod IPs.
+Endpoint resolution is opt-in and works for LoadBalancer, ClusterIP, and headless Services. Only ready endpoints are returned, including both IPv4 and IPv6 addresses when available. The chart automatically grants EndpointSlice permissions when a configured server watches `Service`.
 
-### Custom Hostnames
-
-Custom hostname annotations work the same as for LoadBalancer services:
+Service hostnames can still be supplied with either annotation:
 
 ```yaml
-apiVersion: v1
-kind: Service
 metadata:
-  name: my-statefulset
-  namespace: default
   annotations:
-    k8s-gateway.dns/resolve-endpoints: "true"
-    coredns.io/hostname: "custom.example.com"
-spec:
-  clusterIP: None
-  selector:
-    app: my-app
-  ports:
-    - port: 80
+    external-dns.alpha.kubernetes.io/hostname: app.example.com
 ```
 
-Multiple hostnames can be specified using comma separation:
+Multiple hostnames can be comma-separated.
+
+## Multiple nameservers
+
+For deployments that require two authoritative nameservers, install two chart releases with separate LoadBalancer Services. Leave `apex` unset so each release uses its generated name, and set the other release as `secondary`.
+
+For example, the `k8s_gateway` plugin configuration in the first release can be:
 
 ```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: my-statefulset
-  namespace: default
-  annotations:
-    k8s-gateway.dns/resolve-endpoints: "true"
-    external-dns.alpha.kubernetes.io/hostname: "app1.example.com,app2.example.com"
-spec:
-  clusterIP: None
-  selector:
-    app: my-app
-  ports:
-    - port: 80
+servers:
+  - zones:
+      - zone: example.com
+    plugins:
+      - name: k8s_gateway
+        parameters: example.com
+        configBlock: |-
+          secondary exdns-2-k8s-gateway.k8s-gateway
 ```
 
-### Important Notes
+Use the corresponding `exdns-1-k8s-gateway.k8s-gateway` value in the second release, then create the required NS and glue records for both Service addresses.
 
-- **Opt-in only**: Endpoint resolution is NOT applied by default. Without the `k8s-gateway.dns/resolve-endpoints: "true"` annotation, the existing LoadBalancer-IP behavior is used.
-- **Ready endpoints only**: Only endpoints marked as ready in the EndpointSlices are returned.
-- **Dual-stack support**: Both IPv4 and IPv6 addresses are returned if available.
-- **EndpointSlice API**: This feature uses the Kubernetes EndpointSlice API (discovery.k8s.io/v1), which is available in Kubernetes 1.21+.
+## Development
 
-## Dual Nameserver Deployment
+The repository includes a Tilt development environment backed by kind:
 
-Most of the time, deploying a single `k8s_gateway` instance is enough to satisfy most popular DNS resolvers. However, some of the stricter resolvers expect a zone to be available on at least two servers (RFC1034, section 4.1). In order to satisfy this requirement, a pair of `k8s_gateway` instances need to be deployed, each with its own unique loadBalancer IP. This way the zone NS record will point to a pair of glue records, hard-coded to these IPs.
-
-Another consideration is that in this case `k8s_gateway` instances need to know about their peers in order to provide consistent responses (at least the same set of nameservers). Configuration-wise this would require the following:
-
-1. Two separate `k8s_gateway` deployments with two separate `type: LoadBalancer` services in front of them.
-2. No apex override, which would default to `releaseName.namespace`
-3. A peer nameserver's apex must be included in `secondary` configuration option
-4. Glue records must match the `releaseName.namespace.zone` of each of the running plugin
-
-For example, the above requirements could be satisfied with the following commands:
-
-1. Install two instances of `k8s_plugin` gateway pointing at each other:
-```
-helm install -n kube-system exdns-1 --set domain=zone.example.com --set secondary=exdns-2.kube-system ./chart
-helm install -n kube-system exdns-2 --set domain=zone.example.com --set secondary=exdns-1.kube-system ./chart
-```
-
-2. Obtain their external IPs
-
-```
-kubectl -n kube-system get svc -l app.kubernetes.io/name=k8s-gateway
-NAME                  TYPE           CLUSTER-IP       EXTERNAL-IP   PORT(S)        AGE
-exdns-1-k8s-gateway   LoadBalancer   10.103.229.129   198.51.100.1  53:32122/UDP   5m22s
-exdns-2-k8s-gateway   LoadBalancer   10.107.87.145    203.0.113.11 53:30009/UDP   4m21s
-
-```
-
-3. Delegate the domain from the parent zone by creating a pair of NS records and a pair of glue records pointing to the above IPs:
-
-```
-zone.example.com (NS record) -> exdns-1-k8s-gateway.zone.example.com (A record) -> 198.51.100.1
-zone.example.com (NS record) -> exdns-2-k8s-gateway.zone.example.com (A record) -> 203.0.113.11
-```
-
-
-## Build
-
-### With compile-time configuration file
-
-```
-$ git clone https://github.com/coredns/coredns
-$ cd coredns
-$ vim plugin.cfg
-# Replace lines with kubernetes and k8s_external with k8s_gateway:github.com/k8s-gateway/k8s_gateway
-$ go generate
-$ go build
-$ ./coredns -plugins | grep k8s_gateway
-```
-
-### With external golang source code
-```
-$ git clone https://github.com/k8s-gateway/k8s_gateway.git
-$ cd k8s_gateway
-$ go build cmd/coredns.go
-$ ./coredns -plugins | grep k8s_external
-```
-
-For more details refer to [this CoreDNS doc](https://coredns.io/2017/07/25/compile-time-enabling-or-disabling-plugins/)
-
-
-## Release
-
-## Hack
-
-This repository contains a [Tiltfile](https://tilt.dev/) that can be used for local development. To build a local k8s cluster with kind run:
-
-NOTE: if you're using something else other than docker please prefix the `make setup|up|nuke` commands with `CONTAINER_RUNTIME` or set CONTAINER_RUNTIME before executing them.
-
-```
+```bash
 make setup
-```
-
-To bring up a tilt development environment run `tilt up` or:
-
-```
 make up
 ```
 
 Some test resources can be added to the k8s cluster with:
 
-```
+```bash
 # ingress and service resources
 kubectl apply -f ./test/single-stack/ingress-services.yml
 
 # gateway API resources
 kubectl apply -f ./test/gateway-api/resources.yml
+
+# DNSEndpoint resources
+kubectl apply -f ./test/dnsendpoint.yaml
 ```
 
-Test queries can be sent to the exposed CoreDNS service like this:
+The chart's default test configuration exposes DNS on the NodePort used by the test environment. Query it with:
 
-```
-$ ip=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
-
-# ingress resource
-$ dig @$ip -p 32553 myservicea.foo.org +short
-198.51.100.0
-
-# loadBalancer
-$ dig @$ip -p 32553 test.default.foo.org +short
-198.51.100.3
-
-# HTTPRoute/gateway-API
-$ dig @$ip -p 32553 myservicea.gw.foo.org +short
-198.51.100.4
-$ dig @$ip -p 32553 myserviceb.gw.foo.org +short
-198.51.100.4
-
-# multi-gateway HTTPRoute
-$ dig @$ip -p 32553 myserviced.gw.foo.org +short
-198.51.100.5
-198.51.100.4
+```bash
+ip=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+dig @$ip -p 32553 myservicea.foo.org +short
 ```
 
-To cleanup local environment do:
+Clean up the local environment with:
 
-```
+```bash
 make nuke
 ```

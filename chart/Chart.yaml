@@ -2,8 +2,8 @@ apiVersion: v2
 name: k8s-gateway
 description: A Helm chart for the k8s_gateway CoreDNS plugin
 type: application
-version: 3.7.4
-appVersion: 1.8.3
+version: 4.0.0
+appVersion: 1.9.0
 home: https://codeberg.org/k8s-gateway/k8s_gateway
 sources:
   - https://github.com/k8s-gateway/k8s_gateway
@@ -13,5 +13,13 @@ maintainers:
     name: kryptonian
 annotations:
   artifacthub.io/changes: |
+    - kind: changed
+      description: Reworked the chart around configurable server and plugin definitions, with expanded deployment, service, pod, and security settings.
     - kind: added
-      description: Added loadBalancerAddressPreference for Service and Ingress. The default hostname behavior is unchanged; set ip to prefer a valid status IP.
+      description: Added optional HorizontalPodAutoscaler, PodDisruptionBudget, and Prometheus ServiceMonitor resources.
+    - kind: changed
+      description: Updated RBAC generation to follow configured resources and added permissions for EndpointSlices, ListenerSets, and required get operations.
+    - kind: changed
+      description: Improved configurable ports, protocols, health probes, annotations, labels, extra volumes, secrets, containers, and zone files.
+    - kind: changed
+      description: Refreshed chart tests and documentation for the new chart configuration.
