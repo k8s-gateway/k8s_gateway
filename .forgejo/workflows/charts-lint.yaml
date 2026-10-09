@@ -40,7 +40,7 @@ jobs:
           rm get_helm.sh
 
       - name: Set up chart-testing
-        uses: https://github.com/helm/chart-testing-action@v2.8.0
+        uses: https://github.com/helm/chart-testing-action@v2.9.0
 
       - name: Run chart-testing (install)
         run: ct lint --config .ci/ct.yaml --charts "${{ matrix.chart }}"
