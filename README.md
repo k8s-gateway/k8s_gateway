@@ -9,7 +9,7 @@ This plugin relies on its own connection to the k8s API server and doesn't share
 | Kind | Names are taken from | Addresses are taken from |
 | ---- | -------------------- | ------------------------ |
 | Ingress | `spec.rules[*].host` | `.status.loadBalancer.ingress` |
-| Service | `name.namespace` plus the configured zones, or the `coredns.io/hostname` / `external-dns.alpha.kubernetes.io/hostname` annotations | `.status.loadBalancer.ingress`, or ready EndpointSlice addresses when endpoint resolution is enabled |
+| Service | `name.namespace` plus the configured zones, or the `coredns.io/hostname` / `external-dns.kubernetes.io/hostname` (or legacy `external-dns.alpha.kubernetes.io/hostname`) annotations | `.status.loadBalancer.ingress`, or ready EndpointSlice addresses when endpoint resolution is enabled |
 | HTTPRoute | `spec.hostnames` and `spec.parentRefs` | The referenced Gateway's `status.addresses` |
 | TLSRoute | `spec.hostnames` and `spec.parentRefs` | The referenced Gateway's `status.addresses` |
 | GRPCRoute | `spec.hostnames` and `spec.parentRefs` | The referenced Gateway's `status.addresses` |
@@ -140,15 +140,15 @@ metadata:
 
 Endpoint resolution is opt-in and works for LoadBalancer, ClusterIP, and headless Services. Only ready endpoints are returned, including both IPv4 and IPv6 addresses when available. The chart automatically grants EndpointSlice permissions when a configured server watches `Service`.
 
-Service hostnames can still be supplied with either annotation:
+Service hostnames can still be supplied with an annotation:
 
 ```yaml
 metadata:
   annotations:
-    external-dns.alpha.kubernetes.io/hostname: app.example.com
+    external-dns.kubernetes.io/hostname: app.example.com
 ```
 
-Multiple hostnames can be comma-separated.
+The legacy `external-dns.alpha.kubernetes.io/hostname` annotation is still supported. When several are set, `coredns.io/hostname` takes precedence, followed by `external-dns.kubernetes.io/hostname`, then the legacy key. Multiple hostnames can be comma-separated.
 
 ## Multiple nameservers
 

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -318,6 +319,26 @@ var testServices = map[string]*core.Service{
 			Namespace: "ns1",
 			Annotations: map[string]string{
 				"external-dns.alpha.kubernetes.io/hostname": "annotation-external-dns-list1,annotation-external-dns-list2",
+			},
+		},
+		Spec: core.ServiceSpec{
+			Type: core.ServiceTypeLoadBalancer,
+		},
+		Status: core.ServiceStatus{
+			LoadBalancer: core.LoadBalancerStatus{
+				Ingress: []core.LoadBalancerIngress{
+					{IP: "192.0.0.3"},
+				},
+			},
+		},
+	},
+	"annotation-external-dns-new": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc8",
+			Namespace: "ns1",
+			Annotations: map[string]string{
+				"external-dns.kubernetes.io/hostname":       "annotation-external-dns-new",
+				"external-dns.alpha.kubernetes.io/hostname": "annotation-external-dns-legacy",
 			},
 		},
 		Spec: core.ServiceSpec{
@@ -828,6 +849,41 @@ func TestResolveEndpointsRequested(t *testing.T) {
 			service := &core.Service{ObjectMeta: metav1.ObjectMeta{Annotations: tc.annotations}}
 			if got := resolveEndpointsRequested(service); got != tc.expected {
 				t.Errorf("resolveEndpointsRequested = %v, want %v", got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestServiceHostnameAnnotationPrecedence(t *testing.T) {
+	cases := []struct {
+		name        string
+		annotations map[string]string
+		expected    []string
+	}{
+		{"legacy only", map[string]string{legacyExternalDnsHostnameAnnotationKey: "legacy.example.com"}, []string{"legacy.example.com"}},
+		{"new only", map[string]string{externalDnsHostnameAnnotationKey: "new.example.com"}, []string{"new.example.com"}},
+		{"new over legacy", map[string]string{
+			externalDnsHostnameAnnotationKey:       "new.example.com",
+			legacyExternalDnsHostnameAnnotationKey: "legacy.example.com",
+		}, []string{"new.example.com"}},
+		{"coredns over external-dns", map[string]string{
+			hostnameAnnotationKey:                  "coredns.example.com",
+			externalDnsHostnameAnnotationKey:       "new.example.com",
+			legacyExternalDnsHostnameAnnotationKey: "legacy.example.com",
+		}, []string{"coredns.example.com"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &core.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: "svc", Namespace: "ns1", Annotations: tc.annotations},
+				Spec:       core.ServiceSpec{Type: core.ServiceTypeLoadBalancer},
+			}
+			found, err := serviceHostnameIndexFunc(svc)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(found, tc.expected) {
+				t.Errorf("expected %v, got %v", tc.expected, found)
 			}
 		})
 	}

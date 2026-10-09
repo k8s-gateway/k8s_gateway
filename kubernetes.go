@@ -28,20 +28,21 @@ import (
 )
 
 const (
-	defaultResyncPeriod              = 0
-	ingressHostnameIndex             = "ingressHostname"
-	serviceHostnameIndex             = "serviceHostname"
-	endpointSliceServiceIndex        = "endpointSliceService"
-	gatewayUniqueIndex               = "gatewayIndex"
-	listenerSetUniqueIndex           = "listenerSetIndex"
-	httpRouteHostnameIndex           = "httpRouteHostname"
-	tlsRouteHostnameIndex            = "tlsRouteHostname"
-	grpcRouteHostnameIndex           = "grpcRouteHostname"
-	nodeHostnameIndex                = "nodeHostname"
-	hostnameAnnotationKey            = "coredns.io/hostname"
-	externalDnsHostnameAnnotationKey = "external-dns.alpha.kubernetes.io/hostname"
-	ignoreLabelKey                   = "k8s-gateway.dns/ignore"
-	resolveEndpointsAnnotationKey    = "k8s-gateway.dns/resolve-endpoints"
+	defaultResyncPeriod                    = 0
+	ingressHostnameIndex                   = "ingressHostname"
+	serviceHostnameIndex                   = "serviceHostname"
+	endpointSliceServiceIndex              = "endpointSliceService"
+	gatewayUniqueIndex                     = "gatewayIndex"
+	listenerSetUniqueIndex                 = "listenerSetIndex"
+	httpRouteHostnameIndex                 = "httpRouteHostname"
+	tlsRouteHostnameIndex                  = "tlsRouteHostname"
+	grpcRouteHostnameIndex                 = "grpcRouteHostname"
+	nodeHostnameIndex                      = "nodeHostname"
+	hostnameAnnotationKey                  = "coredns.io/hostname"
+	externalDnsHostnameAnnotationKey       = "external-dns.kubernetes.io/hostname"
+	legacyExternalDnsHostnameAnnotationKey = "external-dns.alpha.kubernetes.io/hostname"
+	ignoreLabelKey                         = "k8s-gateway.dns/ignore"
+	resolveEndpointsAnnotationKey          = "k8s-gateway.dns/resolve-endpoints"
 )
 
 var (
@@ -596,7 +597,7 @@ func serviceHostnameIndexFunc(obj interface{}) ([]string, error) {
 	}
 
 	var hostnames []string
-	if annotation, exists := checkServiceAnnotations(service, hostnameAnnotationKey, externalDnsHostnameAnnotationKey); exists {
+	if annotation, exists := checkServiceAnnotations(service, hostnameAnnotationKey, externalDnsHostnameAnnotationKey, legacyExternalDnsHostnameAnnotationKey); exists {
 		for _, hostname := range splitHostnameAnnotation(annotation) {
 			if checkDomainValid(hostname) {
 				hostnames = append(hostnames, hostname)
