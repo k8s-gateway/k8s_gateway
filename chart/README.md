@@ -45,7 +45,7 @@ The command removes all the Kubernetes components associated with the chart and 
 | `resources.requests.memory` | Container requested memory | `128Mi` |
 | `serviceType` | Kubernetes Service type (`LoadBalancer`, `NodePort`, `ClusterIP`) | `LoadBalancer` |
 | `prometheus.service.enabled` | Set to `true` to create Service for Prometheus metrics | `false` |
-| `prometheus.service.annotations` | Annotations to add to the metrics Service | `{prometheus.io/scrape: "true", prometheus.io/port: "9153"}` |
+| `prometheus.service.annotations` | Additional annotations to add to the metrics Service | `{prometheus.io/scrape: "true"}` |
 | `prometheus.service.selector` | Pod selector for metrics Service | `{}` |
 | `prometheus.monitor.enabled` | Set to `true` to create ServiceMonitor for Prometheus operator | `false` |
 | `prometheus.monitor.additionalLabels` | Additional labels for ServiceMonitor discovery | `{}` |

@@ -47,7 +47,6 @@ prometheus:
     enabled: false
     annotations:
       prometheus.io/scrape: "true"
-      prometheus.io/port: "9153"
     selector: {}
   monitor:
     enabled: false

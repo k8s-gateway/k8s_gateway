@@ -1,0 +1,34 @@
+{{- if and .Values.deployment.enabled .Values.prometheus.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "k8s-gateway.fullname" . }}-metrics
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "k8s-gateway.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+{{- if .Values.customLabels }}
+{{ toYaml .Values.customLabels | indent 4 }}
+{{- end }}
+  annotations:
+    {{- $prometheusAnnotations := deepCopy (default dict .Values.prometheus.service.annotations) }}
+    {{- $_ := set $prometheusAnnotations "prometheus.io/port" (include "k8s-gateway.prometheusPort" .) }}
+    {{- toYaml $prometheusAnnotations | nindent 4 }}
+    {{- if .Values.service.annotations }}
+    {{- toYaml .Values.service.annotations | nindent 4 }}
+    {{- end }}
+    {{- if .Values.customAnnotations }}
+    {{- toYaml .Values.customAnnotations | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    {{- if .Values.prometheus.service.selector }}
+    {{- toYaml .Values.prometheus.service.selector | nindent 4 }}
+    {{- else }}
+    app.kubernetes.io/instance: {{ .Release.Name | quote }}
+    app.kubernetes.io/name: {{ template "k8s-gateway.name" . }}
+    {{- end }}
+  ports:
+  - name: metrics
+    port: {{ include "k8s-gateway.prometheusPort" . }}
+    targetPort: {{ include "k8s-gateway.prometheusPort" . }}
+{{- end }}

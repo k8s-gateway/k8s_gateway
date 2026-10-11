@@ -113,6 +113,7 @@ Generate the list of ports automatically from the server definitions
 {{- define "k8s-gateway.containerPorts" -}}
     {{/* Set ports to be an empty dict */}}
     {{- $ports := dict -}}
+    {{- $prometheusPort := "" -}}
     {{/* Iterate through each of the server blocks */}}
     {{- range .Values.servers -}}
         {{/* Capture port to avoid scoping awkwardness */}}
@@ -152,13 +153,13 @@ Generate the list of ports automatically from the server definitions
         {{- $ports := set $ports $port $innerdict -}}
         {{/* Fetch port from the configuration if the prometheus section exists */}}
         {{- range .plugins -}}
-            {{- if eq .name "prometheus" -}}
-                {{- $prometheus_addr := toString .parameters -}}
-                {{- $prometheus_addr_list := regexSplit ":" $prometheus_addr -1 -}}
-                {{- $prometheus_port := index $prometheus_addr_list 1 -}}
-                {{- $ports := set $ports $prometheus_port (dict "istcp" true "isudp" false) -}}
+            {{- if and . (hasKey . "name") (eq (get . "name") "prometheus") -}}
+                {{- $prometheusPort = regexFind "[0-9]+$" (toString .parameters) -}}
             {{- end -}}
         {{- end -}}
+    {{- end -}}
+    {{- if $prometheusPort -}}
+        {{- $ports := set $ports $prometheusPort (dict "istcp" true "isudp" false) -}}
     {{- end -}}
     {{/* Write out the ports according to the info collected above */}}
     {{- range $port, $innerdict := $ports -}}
@@ -176,6 +177,24 @@ Generate the list of ports automatically from the server definitions
             {{- printf "- %s\n" (toJson $portDict) -}}
         {{- end -}}
     {{- end -}}
+{{- end -}}
+
+{{/*
+Return the port configured for the Prometheus plugin.
+*/}}
+{{- define "k8s-gateway.prometheusPort" -}}
+    {{- $prometheusPort := "" -}}
+    {{- range .Values.servers -}}
+        {{- range .plugins -}}
+            {{- if and . (hasKey . "name") (eq (get . "name") "prometheus") -}}
+                {{- $prometheusPort = regexFind "[0-9]+$" (toString .parameters) -}}
+            {{- end -}}
+        {{- end -}}
+    {{- end -}}
+    {{- if not $prometheusPort -}}
+        {{- fail "prometheus.service.enabled requires a prometheus plugin with a port in its parameters" -}}
+    {{- end -}}
+    {{- $prometheusPort -}}
 {{- end -}}
 
 {{/*
