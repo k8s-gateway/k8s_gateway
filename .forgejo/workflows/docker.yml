@@ -58,7 +58,7 @@ jobs:
       # PRs push to ttl.sh, which is anonymous, so no login is needed there.
       - name: Login to Codeberg Container Registry
         if: ${{ github.event_name != 'pull_request' }}
-        uses: https://github.com/docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: https://github.com/docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: codeberg.org
           username: ${{ github.actor }}
@@ -161,7 +161,7 @@ jobs:
           echo "jwt=${jwt}" >> "$GITHUB_OUTPUT"
 
       - name: Login to Codeberg Container Registry
-        uses: https://github.com/docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: https://github.com/docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: codeberg.org
           username: ${{ github.actor }}
