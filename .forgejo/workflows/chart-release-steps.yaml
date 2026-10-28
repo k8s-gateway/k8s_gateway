@@ -55,7 +55,7 @@ jobs:
           path: src
 
       - name: Install Mise and required tools
-        uses: https://github.com/jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        uses: https://github.com/jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
           working_directory: src/chart
 
