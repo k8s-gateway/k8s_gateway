@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/netip"
 	"slices"
+	"strconv"
 	"strings"
 
+	"github.com/miekg/dns"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -59,6 +61,7 @@ func initializeDNSEndpointController(ctx context.Context, ctrl *KubeController, 
 		cache.Indexers{externalDNSHostnameIndex: dnsEndpointTargetIndexFunc},
 	)
 	resource.lookup = lookupDNSEndpoint(dnsEndpointController)
+	resource.lookupMX = lookupDNSEndpointMX(dnsEndpointController)
 	ctrl.controllers = append(ctrl.controllers, dnsEndpointController)
 	log.Infof("DNSEndpoint controller initialized")
 }
@@ -104,13 +107,62 @@ func dnsEndpointTargetIndexFunc(obj interface{}) ([]string, error) {
 	return hostnames, nil
 }
 
+// dnsEndpointObjects returns all DNSEndpoint objects indexed under any of the keys.
+func dnsEndpointObjects(ctrl cache.SharedIndexInformer, indexKeys []string) []interface{} {
+	var objs []interface{}
+	for _, key := range indexKeys {
+		obj, _ := ctrl.GetIndexer().ByIndex(externalDNSHostnameIndex, strings.ToLower(key))
+		objs = append(objs, obj...)
+	}
+	return objs
+}
+
+// parseMXTarget parses an external-dns MX target of the form "<preference> <host>",
+// e.g. "10 mail.example.com.". It returns false for malformed targets.
+func parseMXTarget(target string) (mxRecord, bool) {
+	fields := strings.Fields(target)
+	if len(fields) != 2 {
+		return mxRecord{}, false
+	}
+	pref, err := strconv.ParseUint(fields[0], 10, 16)
+	if err != nil {
+		return mxRecord{}, false
+	}
+	if _, ok := dns.IsDomainName(fields[1]); !ok {
+		return mxRecord{}, false
+	}
+	return mxRecord{Preference: uint16(pref), Host: dns.Fqdn(fields[1])}, true
+}
+
+// lookupDNSEndpointMX returns the MX entries of DNSEndpoint endpoints matching the index keys.
+func lookupDNSEndpointMX(ctrl cache.SharedIndexInformer) lookupMXFunc {
+	return func(indexKeys []string) (result []mxRecord) {
+		for _, obj := range dnsEndpointObjects(ctrl, indexKeys) {
+			dnsEndpoint, _ := obj.(*externaldnsv1.DNSEndpoint)
+			if dnsEndpoint == nil {
+				continue
+			}
+			for _, endpoint := range dnsEndpoint.Spec.Endpoints {
+				if endpoint.RecordType != "MX" {
+					continue
+				}
+				for _, target := range endpoint.Targets {
+					mx, ok := parseMXTarget(target)
+					if !ok {
+						log.Debugf("Ignoring invalid MX target %q for DNSEndpoint %s", target, dnsEndpoint.Name)
+						continue
+					}
+					result = append(result, mx)
+				}
+			}
+		}
+		return result
+	}
+}
+
 func lookupDNSEndpoint(ctrl cache.SharedIndexInformer) func([]string) (results []netip.Addr, raws []string) {
 	return func(indexKeys []string) (result []netip.Addr, raw []string) {
-		var objs []interface{}
-		for _, key := range indexKeys {
-			obj, _ := ctrl.GetIndexer().ByIndex(externalDNSHostnameIndex, strings.ToLower(key))
-			objs = append(objs, obj...)
-		}
+		objs := dnsEndpointObjects(ctrl, indexKeys)
 		log.Debugf("Found %d matching DNSEndpoint objects", len(objs))
 		for _, obj := range objs {
 			dnsEndpoint, _ := obj.(*externaldnsv1.DNSEndpoint)

@@ -16,7 +16,7 @@ This plugin relies on its own connection to the k8s API server and doesn't share
 | DNSEndpoint | `spec.endpoints[*].dnsName` | `spec.endpoints[*].targets` |
 
 > [!IMPORTANT] Gateway API routes require Gateway API CRDs v1.1.0 or newer from the experimental channel.
-> Currently, supports A and AAAA-type queries, all other queries result in NODATA responses.
+> Currently, supports A, AAAA, TXT and MX-type queries, all other queries result in NODATA responses. TXT and MX records can only be provided by `DNSEndpoint` resources.
 
 > This plugin is **NOT** supposed to be used for intra-cluster DNS resolution and does not contain the default upstream [kubernetes](https://coredns.io/plugins/kubernetes/) plugin.
 

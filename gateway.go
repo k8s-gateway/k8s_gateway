@@ -22,9 +22,20 @@ const (
 	loadBalancerAddressPreferenceIP       loadBalancerAddressPreference = "ip"
 )
 
+// mxRecord is a single mail exchanger entry: a preference and the FQDN of the host.
+type mxRecord struct {
+	Preference uint16
+	Host       string
+}
+
+// lookupMXFunc returns the MX entries for the first matching index keys.
+// It is optional: resources that cannot carry MX data leave it nil.
+type lookupMXFunc func(indexKeys []string) []mxRecord
+
 type resourceWithIndex struct {
-	name   string
-	lookup lookupFunc
+	name     string
+	lookup   lookupFunc
+	lookupMX lookupMXFunc
 }
 
 // Static resources with their default noop function
@@ -180,8 +191,11 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	log.Debugf("computed response addresses %v", addrs)
 	log.Debugf("computed response raws %v", raws)
 
+	mxs := gw.getMatchingMX(indexKeySets)
+	log.Debugf("computed response mx records %v", mxs)
+
 	// Fall through if no host matches
-	if len(addrs) == 0 && len(raws) == 0 && gw.Fall.Through(qname) {
+	if len(addrs) == 0 && len(raws) == 0 && len(mxs) == 0 && gw.Fall.Through(qname) {
 		return plugin.NextOrFailure(gw.Name(), gw.Next, ctx, w, r)
 	}
 
@@ -211,7 +225,7 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 			}
 
 			// as per rfc4074 #3 (symmetric: IPv6-only record yields NODATA for A queries)
-			if len(ipv6Addrs) > 0 {
+			if len(ipv6Addrs) > 0 || len(mxs) > 0 {
 				m.Rcode = dns.RcodeSuccess
 			}
 
@@ -231,7 +245,7 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 			}
 
 			// as per rfc4074 #3
-			if len(ipv4Addrs) > 0 {
+			if len(ipv4Addrs) > 0 || len(mxs) > 0 {
 				m.Rcode = dns.RcodeSuccess
 			}
 
@@ -250,9 +264,29 @@ func (gw *Gateway) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 				m.Rcode = dns.RcodeNameError
 			}
 
+			// the name exists but only carries MX data: NODATA
+			if len(mxs) > 0 {
+				m.Rcode = dns.RcodeSuccess
+			}
+
 			m.Ns = []dns.RR{gw.soa(state)}
 		} else {
 			m.Answer = gw.TXT(state.Name(), raws)
+		}
+	case dns.TypeMX:
+
+		if len(mxs) == 0 {
+
+			// NXDOMAIN only when the name does not exist at all. A name that
+			// has A/AAAA/TXT data but no MX data yields NODATA.
+			if !isRootZoneQuery && len(addrs) == 0 && len(raws) == 0 {
+				m.Rcode = dns.RcodeNameError
+			}
+
+			m.Ns = []dns.RR{gw.soa(state)}
+		} else {
+			m.Answer = gw.MX(state.Name(), mxs)
+			m.Extra = gw.mxAdditional(mxs)
 		}
 	case dns.TypeSOA:
 
@@ -352,6 +386,61 @@ func (gw *Gateway) getMatchingAddresses(indexKeySets [][]string) ([]netip.Addr, 
 	return nil, nil
 }
 
+// Gets the MX entries associated with the first set of index keys for which
+// any resource has MX data. Unlike getMatchingAddresses it consults every
+// resource that supports MX, so MX data is not hidden by A/AAAA matches found
+// in another resource.
+func (gw *Gateway) getMatchingMX(indexKeySets [][]string) []mxRecord {
+	for _, indexKeys := range indexKeySets {
+		var mxs []mxRecord
+		for _, resource := range gw.Resources {
+			if resource.lookupMX == nil {
+				continue
+			}
+			mxs = append(mxs, resource.lookupMX(indexKeys)...)
+		}
+		if len(mxs) > 0 {
+			return mxs
+		}
+	}
+
+	return nil
+}
+
+// mxAdditional builds the additional section for an MX answer: A/AAAA records
+// for every exchange host that this plugin is itself authoritative for.
+func (gw *Gateway) mxAdditional(mxs []mxRecord) (extra []dns.RR) {
+	seen := make(map[string]struct{})
+	for _, mx := range mxs {
+		host := dns.Fqdn(mx.Host)
+		if _, ok := seen[strings.ToLower(host)]; ok {
+			continue
+		}
+		seen[strings.ToLower(host)] = struct{}{}
+
+		zone := plugin.Zones(gw.Zones).Matches(host)
+		if zone == "" {
+			continue
+		}
+		zone = host[len(host)-len(zone):] // maintain case of original name
+
+		addrs, _ := gw.getMatchingAddresses(gw.getQueryIndexKeySets(host, zone))
+
+		var ipv4Addrs, ipv6Addrs []netip.Addr
+		for _, addr := range addrs {
+			if addr.Is4() {
+				ipv4Addrs = append(ipv4Addrs, addr)
+			}
+			if addr.Is6() {
+				ipv6Addrs = append(ipv6Addrs, addr)
+			}
+		}
+		extra = append(extra, gw.A(host, ipv4Addrs)...)
+		extra = append(extra, gw.AAAA(host, ipv6Addrs)...)
+	}
+	return extra
+}
+
 // Name implements the Handler interface.
 func (gw *Gateway) Name() string { return thisPlugin }
 
@@ -387,6 +476,19 @@ func (gw *Gateway) TXT(name string, results []string) (records []dns.RR) {
 		}
 	}
 
+	return records
+}
+
+// MX builds MX records, skipping duplicate preference/host pairs.
+func (gw *Gateway) MX(name string, results []mxRecord) (records []dns.RR) {
+	dup := make(map[mxRecord]struct{})
+	for _, result := range results {
+		key := mxRecord{Preference: result.Preference, Host: strings.ToLower(result.Host)}
+		if _, ok := dup[key]; !ok {
+			dup[key] = struct{}{}
+			records = append(records, &dns.MX{Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeMX, Class: dns.ClassINET, Ttl: gw.ttlLow}, Preference: result.Preference, Mx: dns.Fqdn(result.Host)})
+		}
+	}
 	return records
 }
 

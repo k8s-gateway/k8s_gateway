@@ -254,6 +254,45 @@ var tests = []test.Case{
 			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
 		},
 	},
+	// Existing Endpoint | MX records, in-zone exchange host gets glue in the additional section
+	{
+		Qname: "endpoint.example.com.", Qtype: dns.TypeMX, Rcode: dns.RcodeSuccess,
+		Answer: []dns.RR{
+			test.MX("endpoint.example.com. 60  IN  MX  10  domain.example.com."),
+			test.MX("endpoint.example.com. 60  IN  MX  20  backup.mail.net."),
+		},
+		Extra: []dns.RR{
+			test.A("domain.example.com. 60  IN  A   192.0.0.1"),
+		},
+	},
+	// Existing Endpoint with MX data only | MX record
+	{
+		Qname: "mxonly.example.com.", Qtype: dns.TypeMX, Rcode: dns.RcodeSuccess,
+		Answer: []dns.RR{
+			test.MX("mxonly.example.com. 60  IN  MX  5  mail.external.net."),
+		},
+	},
+	// Existing Endpoint with MX data only | A record is NODATA, not NXDOMAIN
+	{
+		Qname: "mxonly.example.com.", Qtype: dns.TypeA, Rcode: dns.RcodeSuccess,
+		Ns: []dns.RR{
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+		},
+	},
+	// Existing name without MX data | MX record is NODATA
+	{
+		Qname: "domain.example.com.", Qtype: dns.TypeMX, Rcode: dns.RcodeSuccess,
+		Ns: []dns.RR{
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+		},
+	},
+	// Non-existing name | MX record
+	{
+		Qname: "nonexistent.example.com.", Qtype: dns.TypeMX, Rcode: dns.RcodeNameError,
+		Ns: []dns.RR{
+			test.SOA("example.com.  60  IN  SOA dns1.kube-system.example.com. hostmaster.example.com. 1499347823 7200 1800 86400 5"),
+		},
+	},
 }
 
 var testsFallthrough = []FallthroughCase{
@@ -339,6 +378,23 @@ func testDNSEndpointLookup(keys []string) (results []netip.Addr, raws []string) 
 	return results, raws
 }
 
+var testDNSEndpointMXIndexes = map[string][]mxRecord{
+	"endpoint.example.com": {
+		{Preference: 10, Host: "domain.example.com."},
+		{Preference: 20, Host: "backup.mail.net."},
+		// duplicate, must be collapsed in the answer
+		{Preference: 10, Host: "Domain.Example.com."},
+	},
+	"mxonly.example.com": {{Preference: 5, Host: "mail.external.net."}},
+}
+
+func testDNSEndpointMXLookup(keys []string) (results []mxRecord) {
+	for _, key := range keys {
+		results = append(results, testDNSEndpointMXIndexes[strings.ToLower(key)]...)
+	}
+	return results
+}
+
 func setupLookupFuncs(gw *Gateway) {
 	if resource := gw.lookupResource("Ingress"); resource != nil {
 		resource.lookup = testIngressLookup
@@ -348,6 +404,7 @@ func setupLookupFuncs(gw *Gateway) {
 	}
 	if resource := gw.lookupResource("DNSEndpoint"); resource != nil {
 		resource.lookup = testDNSEndpointLookup
+		resource.lookupMX = testDNSEndpointMXLookup
 	}
 }
 

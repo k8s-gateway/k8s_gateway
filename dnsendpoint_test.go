@@ -274,3 +274,70 @@ func TestDNSEndpointLister(t *testing.T) {
 		t.Errorf("expected item name %q, got %q", "ep1", list.Items[0].Name)
 	}
 }
+
+func TestParseMXTarget(t *testing.T) {
+	tests := []struct {
+		target string
+		want   mxRecord
+		ok     bool
+	}{
+		{"10 mail.example.com.", mxRecord{Preference: 10, Host: "mail.example.com."}, true},
+		{"10 mail.example.com", mxRecord{Preference: 10, Host: "mail.example.com."}, true},
+		{"  0   mx.example.com.  ", mxRecord{Preference: 0, Host: "mx.example.com."}, true},
+		{"65535 mx.example.com.", mxRecord{Preference: 65535, Host: "mx.example.com."}, true},
+		{"65536 mx.example.com.", mxRecord{}, false},
+		{"-1 mx.example.com.", mxRecord{}, false},
+		{"abc mx.example.com.", mxRecord{}, false},
+		{"mail.example.com.", mxRecord{}, false},
+		{"10", mxRecord{}, false},
+		{"10 mail.example.com. extra", mxRecord{}, false},
+		{"", mxRecord{}, false},
+	}
+	for _, tc := range tests {
+		got, ok := parseMXTarget(tc.target)
+		if ok != tc.ok || got != tc.want {
+			t.Errorf("parseMXTarget(%q) = (%v, %v), want (%v, %v)", tc.target, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+func TestLookupDNSEndpointMX(t *testing.T) {
+	fakeIndexer := newDNSEndpointIndexer()
+	ep := &externaldnsv1.DNSEndpoint{
+		ObjectMeta: metav1.ObjectMeta{Name: "mx-ep", Namespace: "ns1"},
+		Spec: externaldnsv1.DNSEndpointSpec{
+			Endpoints: []*endpoint.Endpoint{
+				{DNSName: "mail.example.com", RecordType: "A", Targets: []string{"192.0.2.10"}},
+				{DNSName: "mail.example.com", RecordType: "MX", Targets: []string{"10 mx1.example.com.", "20 mx2.example.com", "garbage", "x mx3.example.com."}},
+			},
+		},
+	}
+	if err := fakeIndexer.Add(ep); err != nil {
+		t.Fatalf("failed to add DNSEndpoint to indexer: %v", err)
+	}
+	informer := &fakeSharedIndexInformer{indexer: fakeIndexer}
+
+	got := lookupDNSEndpointMX(informer)([]string{"mail.example.com"})
+	want := []mxRecord{
+		{Preference: 10, Host: "mx1.example.com."},
+		{Preference: 20, Host: "mx2.example.com."},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d MX records (invalid targets skipped), got %d: %v", len(want), len(got), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("MX record %d: expected %v, got %v", i, want[i], got[i])
+		}
+	}
+
+	// MX targets must not leak into the A/AAAA/TXT lookup
+	addrs, raws := lookupDNSEndpoint(informer)([]string{"mail.example.com"})
+	if len(addrs) != 1 || len(raws) != 0 {
+		t.Errorf("expected only the A record from the regular lookup, got addrs=%v raws=%v", addrs, raws)
+	}
+
+	if none := lookupDNSEndpointMX(informer)([]string{"unknown.example.com"}); len(none) != 0 {
+		t.Errorf("expected no MX results for unknown name, got %v", none)
+	}
+}
